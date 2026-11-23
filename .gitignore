@@ -32,3 +32,8 @@
 !public/archive/images/*.webp
 !public/archive/images/*.mp4
 !source/street-sectors.mjs
+!functions/
+!functions/_middleware.js
+!public/_routes.json
+!public/share/
+!public/share/*.jpg
