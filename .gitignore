@@ -37,3 +37,6 @@
 !public/_routes.json
 !public/share/
 !public/share/*.jpg
+
+!public/archive/chat/
+!public/archive/chat/index.html
