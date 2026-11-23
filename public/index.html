@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>한큐컴퍼니</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#23322f;color:white;font:15px/1.45 system-ui,sans-serif}
+canvas{display:block}
+[hidden]{display:none!important}
+#arrival{position:fixed;inset:0;z-index:2;display:grid;place-items:end center;padding:0 20px max(9vh,36px);background:linear-gradient(0deg,#15242088,transparent 40%);pointer-events:none}
+body[data-view="loading"] #arrival,body[data-view="error"] #arrival{background:linear-gradient(0deg,#12211fe8,rgba(22,35,32,.35) 60%),#344744 url('./aerial.webp') center/cover no-repeat}
+#loading{width:min(250px,80vw);color:#fff;text-shadow:0 1px 6px #0008}
+#loadLabel{margin:0 0 12px;font-weight:600;letter-spacing:-.03em}
+progress{display:block;width:100%;height:3px;border:0;border-radius:4px;overflow:hidden;accent-color:#d2e9c9}
+progress::-webkit-progress-bar{background:#ffffff42}
+progress::-webkit-progress-value{background:#d2e9c9;transition:width .24s ease}
+button{font:inherit;cursor:pointer;border:0}
+#enter,#retry{pointer-events:auto;border-radius:99px;background:#f2f6ef;color:#182c23;padding:14px 23px;font-weight:700;box-shadow:0 4px 22px #10232142}
+#enter span{margin-left:20px}
+#retry{margin-top:12px}
+footer{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:8px;width:max-content;max-width:95vw;flex-wrap:wrap;border-radius:12px;background:#15201ee8;padding:8px 12px;font-size:13px}
+footer button{padding:6px 10px;border-radius:6px;background:#e8eee6;color:#1c3026}
+button:focus-visible{outline:3px solid #a5deff;outline-offset:4px}
+@media(max-width:700px){#status{width:100%;text-align:center}}
+@media(prefers-reduced-motion:reduce){progress::-webkit-progress-value{transition:none}}
+#character{position:fixed;top:16px;right:16px;z-index:3;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 13px;border-radius:12px;background:#15201ee8;font-size:13px}
+#character select{font:inherit;padding:5px 8px;border:0;border-radius:6px;background:#edf2e9;color:#203026}
+body:not([data-view="aerial"]):not([data-view="walking"]) #character{display:none}
+#status{position:fixed;bottom:calc(100% + 9px);background:#15201ee8;border-radius:10px;padding:8px 14px;width:max-content;max-width:92vw;text-align:center}
+#status:empty{display:none}
+.panel{position:absolute;bottom:calc(100% + 8px);background:#17241ff5;padding:10px;border-radius:12px;width:max-content;max-width:92vw;box-shadow:0 4px 20px #0004}
+.panel button{margin:3px}
+#help{line-height:1.9;padding:12px 18px}
+footer:has(.panel:not([hidden])) #status{visibility:hidden}
+</style>
+<script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
+</head>
+<body data-view="loading">
+<div id="arrival">
+  <div id="loading"><p id="loadLabel" role="status">거리 불러오는 중…</p><progress aria-label="거리 준비 진행률" max="100"></progress><button id="retry" hidden>다시 시도</button></div>
+  <button id="enter" hidden>거리로 들어가기<span aria-hidden="true">↗</span></button>
+</div>
+<label id="character">캐릭터 <select id="avatar"><option value="man">남자</option><option value="woman">여자</option></select></label>
+<footer hidden>
+  <span id="status" role="status"></span>
+  <div class="panel" id="places" hidden><button id="detail">이디야 앞</button><button id="parking">뒤편 주차장</button><button id="reset">시작 위치</button></div>
+  <div class="panel" id="help" hidden>마우스 시점 · 휠 거리 조절<br>WASD 또는 방향키 이동 · Shift 달리기<br>Space 점프 · Esc 커서 풀기</div>
+  <button aria-controls="places" aria-expanded="false">장소 이동</button>
+  <button aria-controls="help" aria-expanded="false">? 조작법</button>
+</footer>
+<script type="module">
+function showError(){
+  document.body.dataset.view='error';
+  document.querySelector('#arrival').hidden=false;
+  document.querySelector('#loading').hidden=false;
+  document.querySelector('#enter').hidden=true;
+  document.querySelector('#loadLabel').textContent='거리를 열 수 없습니다. 브라우저의 그래픽 설정과 연결을 확인해 주세요.';
+  document.querySelector('progress').hidden=true;
+  document.querySelector('#retry').hidden=false;
+}
+document.querySelector('#retry').onclick=()=>location.reload();
+import('./street.js?v=walk4').then(module=>module.main()).catch(error=>{console.error(error);showError();});
+</script>
+</body></html>

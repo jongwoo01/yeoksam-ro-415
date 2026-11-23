@@ -1,0 +1,27 @@
+# Publish the simulator and its build inputs. Keep field references and previews local.
+*
+!.gitignore
+!README.md
+!build.mjs
+!wrangler.toml
+!public/
+!public/*.js
+!public/*.html
+!public/knit-*.glb
+!public/knit-motion.json
+!public/street.glb
+!public/obstacles.json
+!public/walkways.json
+!public/aerial.webp
+!public/lib/
+!public/lib/*.js
+!public/utils/
+!public/utils/*.js
+!public/props/
+!public/props/water_manhole_cover/
+!public/props/water_manhole_cover/*.bin
+!public/props/water_manhole_cover/*.gltf
+!public/props/water_manhole_cover/textures/
+!public/props/water_manhole_cover/textures/*.jpg
+!source/
+!source/*.py
