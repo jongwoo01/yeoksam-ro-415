@@ -97,6 +97,9 @@ export async function main(){
   }
   await prop('water_manhole_cover',0,3,.035,0,.001,false);
   // A local reflection probe includes the opposite frontage and real canopy silhouettes.
+  // All six sides see the same fixed sun and static city.
+  renderer.shadowMap.autoUpdate=false;
+  renderer.shadowMap.needsUpdate=true;
   const target=new T.WebGLCubeRenderTarget(512,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
   const probe=new T.CubeCamera(.3,190,target);probe.position.set(0,3.5,-9.7);probe.update(renderer,scene);
   const pmrem=new T.PMREMGenerator(renderer), environment=pmrem.fromCubemap(target.texture);
