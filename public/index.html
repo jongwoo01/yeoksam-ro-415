@@ -2,12 +2,12 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>한큐컴퍼니</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>강남 역삼로 415 성진빌딩</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#23322f;color:white;font:15px/1.45 system-ui,sans-serif}
-canvas{display:block}
+canvas{display:block;max-width:100vw}
 [hidden]{display:none!important}
 #arrival{position:fixed;inset:0;z-index:2;display:grid;place-items:end center;padding:0 20px max(9vh,36px);background:linear-gradient(0deg,#15242088,transparent 40%);pointer-events:none}
 body[data-view="loading"] #arrival,body[data-view="error"] #arrival{background:linear-gradient(0deg,#12211fe8,rgba(22,35,32,.35) 60%),#344744 url('./aerial.webp') center/cover no-repeat}
@@ -17,39 +17,59 @@ progress{display:block;width:100%;height:3px;border:0;border-radius:4px;overflow
 progress::-webkit-progress-bar{background:#ffffff42}
 progress::-webkit-progress-value{background:#d2e9c9;transition:width .24s ease}
 button{font:inherit;cursor:pointer;border:0}
-#enter,#retry{pointer-events:auto;border-radius:99px;background:#f2f6ef;color:#182c23;padding:14px 23px;font-weight:700;box-shadow:0 4px 22px #10232142}
-#enter span{margin-left:20px}
-#retry{margin-top:12px}
-footer{position:fixed;bottom:max(18px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:8px;width:max-content;max-width:95vw;flex-wrap:wrap;border-radius:12px;background:#15201ee8;padding:8px 12px;font-size:13px}
-footer button{padding:6px 10px;border-radius:6px;background:#e8eee6;color:#1c3026}
-button:focus-visible{outline:3px solid #a5deff;outline-offset:4px}
-@media(max-width:700px){#status{width:100%;text-align:center}}
-@media(prefers-reduced-motion:reduce){progress::-webkit-progress-value{transition:none}}
-#character{position:fixed;top:16px;right:16px;z-index:3;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 13px;border-radius:12px;background:#15201ee8;font-size:13px}
-#character select{font:inherit;padding:5px 8px;border:0;border-radius:6px;background:#edf2e9;color:#203026}
-body:not([data-view="aerial"]):not([data-view="walking"]) #character{display:none}
-#status{position:fixed;bottom:calc(100% + 9px);background:#15201ee8;border-radius:10px;padding:8px 14px;width:max-content;max-width:92vw;text-align:center}
-#status:empty{display:none}
-.panel{position:absolute;bottom:calc(100% + 8px);background:#17241ff5;padding:10px;border-radius:12px;width:max-content;max-width:92vw;box-shadow:0 4px 20px #0004}
-.panel button{margin:3px}
-#help{line-height:1.9;padding:12px 18px}
-footer:has(.panel:not([hidden])) #status{visibility:hidden}
+#retry{pointer-events:auto;border-radius:99px;background:#f2f6ef;color:#182c23;padding:14px 23px;font-weight:700;box-shadow:0 4px 22px #10232142}
+body[data-view="aerial"] #arrival{place-items:center;padding:0 16px}
+#enter{pointer-events:auto;max-width:100%;min-height:clamp(62px,8vw,78px);padding:16px clamp(22px,4vw,52px);border:1px solid #e3e5e3;border-radius:999px;background:#fff;color:#202522;font-size:clamp(18px,2.4vw,26px);font-weight:600;letter-spacing:-.025em;line-height:1.35;word-break:keep-all;text-wrap:balance}
+#enter:active{background:#f5f5f5}
+#settings{position:fixed;top:16px;left:16px;z-index:3;display:flex;gap:8px;align-items:center}
+#settings,dialog button,dialog select{border:0;border-radius:9px;padding:9px 13px;background:#f4f4f4;color:#171717;font:inherit}
+#settings{background:#fff;color:#171717;border:1px solid #dedede;border-radius:999px}
+body:not([data-view="aerial"]):not([data-view="walking"]) #settings{display:none}
+kbd{font:600 12px system-ui;border:1px solid #96a89e75;border-radius:4px;padding:2px 5px}
+dialog{width:min(380px,92vw);max-height:86dvh;overflow:auto;border:1px solid #dedede;border-radius:18px;padding:22px;background:#fff;color:#171717;box-shadow:0 16px 48px #0002}
+dialog::backdrop{background:#11111166}
+dialog header,dialog label{display:flex;align-items:center;justify-content:space-between;gap:12px}
+dialog h2{margin:0;font-size:23px}dialog h3{font-size:15px;margin:0 0 10px}dialog section,dialog label{margin-top:15px;border-top:1px solid #e6e6e6;padding-top:13px}
+dialog p{margin:4px 0;color:#464646;font-size:14px}
+#places button{margin:2px 2px 2px 0;font-size:14px}
+#status{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#15201ee8;border-radius:10px;padding:8px 14px;width:max-content;max-width:92vw;text-align:center;font-size:13px}
+body:not([data-view="walking"]) #status,#status:empty{display:none}
+button:focus-visible,select:focus-visible{outline:3px solid #555;outline-offset:3px}
+#touchControls,.touchHelp{display:none}
+@media(any-pointer:coarse){
+  body{overscroll-behavior:none}
+  canvas,#touchControls{touch-action:none;user-select:none;-webkit-user-select:none}
+  body[data-view="walking"] #touchControls{display:block}
+  #settings{top:max(12px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));min-height:44px}
+  #settings kbd,.desktopHelp{display:none}
+  .touchHelp{display:block}
+  #stick,#jump{position:fixed;bottom:max(20px,env(safe-area-inset-bottom));display:grid;place-items:center;border-radius:50%;border:1px solid #ecfff1a8;background:#132720a8;color:white;touch-action:none;-webkit-tap-highlight-color:transparent}
+  #stick{left:max(20px,env(safe-area-inset-left));width:100px;height:100px}
+  #stick span{width:39px;height:39px;border-radius:50%;background:#eaf4e6c9;pointer-events:none}
+  #jump{left:calc(max(20px,env(safe-area-inset-left)) + 110px);width:64px;height:64px;font-weight:700}
+  #tapMark{position:fixed;z-index:1;pointer-events:none;transform:translate(-50%,-50%);width:24px;height:24px;border:2px solid white;background:#29463a66;border-radius:50%;text-align:center;line-height:18px;color:white;box-shadow:0 0 0 4px #ffffff40}
+  #jump:active{background:#487456}
+  #status{top:max(66px,calc(env(safe-area-inset-top) + 52px));bottom:auto;text-align:center;pointer-events:none}
+  dialog button,dialog select{min-height:44px}
+}
 </style>
 <script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
 </head>
 <body data-view="loading">
 <div id="arrival">
   <div id="loading"><p id="loadLabel" role="status">거리 불러오는 중…</p><progress aria-label="거리 준비 진행률" max="100"></progress><button id="retry" hidden>다시 시도</button></div>
-  <button id="enter" hidden>거리로 들어가기<span aria-hidden="true">↗</span></button>
+  <button id="enter" hidden>강남 역삼로 415 성진빌딩 거리로 가보기</button>
 </div>
-<label id="character">캐릭터 <select id="avatar"><option value="man">남자</option><option value="woman">여자</option></select></label>
-<footer hidden>
-  <span id="status" role="status"></span>
-  <div class="panel" id="places" hidden><button id="detail">이디야 앞</button><button id="parking">뒤편 주차장</button><button id="reset">시작 위치</button></div>
-  <div class="panel" id="help" hidden>마우스 시점 · 휠 거리 조절<br>WASD 또는 방향키 이동 · Shift 달리기<br>Space 점프 · Esc 커서 풀기</div>
-  <button aria-controls="places" aria-expanded="false">장소 이동</button>
-  <button aria-controls="help" aria-expanded="false">? 조작법</button>
-</footer>
+<button id="settings" aria-label="설정 열기" aria-haspopup="dialog"><span aria-hidden="true">⚙</span> 설정 <kbd>ESC</kbd></button>
+<span id="status" role="status"></span>
+<span hidden aria-hidden="true" id="tapMark"></span>
+<div id="touchControls"><div id="stick" aria-label="이동 조이스틱"><span></span></div><button id="jump">점프</button></div>
+<dialog id="menu" aria-labelledby="menuTitle">
+  <header><h2 id="menuTitle">설정</h2><button id="closeMenu" aria-label="설정 닫기">닫기</button></header>
+  <label>캐릭터 <select id="avatar"><option value="man">남자</option><option value="woman">여자</option></select></label>
+  <section><h3>조작법</h3><div class="desktopHelp"><p>WASD · 방향키로 이동 / 마우스로 둘러보기</p><p>Shift 달리기 · Space 점프 · 휠로 거리 조절</p><p>Esc 설정 열기 · 닫기</p></div><div class="touchHelp"><p>왼쪽 조이스틱으로 이동하고 끝까지 밀면 달립니다.</p><p>바닥을 탭하면 그곳으로 이동합니다. 화면을 밀어 둘러보고, 조이스틱 옆 버튼으로 점프하세요.</p></div></section>
+  <section id="places"><h3>위치 이동</h3><button id="detail">이디야 앞</button><button id="parking">뒤편 주차장</button><button id="reset">시작 위치</button></section>
+</dialog>
 <script type="module">
 function showError(){
   document.body.dataset.view='error';

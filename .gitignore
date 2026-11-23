@@ -25,3 +25,4 @@
 !public/props/water_manhole_cover/textures/*.jpg
 !source/
 !source/*.py
+!public/camera-volume.bin

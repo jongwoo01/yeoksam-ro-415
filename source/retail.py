@@ -14,13 +14,13 @@ def add_shops(material,box,pole,mesh,collide,materials):
     # Font geometry is converted once and batched by material before export.
     font=bpy.data.fonts.load('/System/Library/Fonts/AppleSDGothicNeo.ttc')
     latin=bpy.data.fonts.load('/System/Library/Fonts/Supplemental/Arial Bold.ttf')
-    def text(label,x,y,z,w,h,mat,turn=0):
+    def text(label,x,y,z,w,h,mat,turn=0,flat=False):
         c=bpy.data.curves.new(label,'FONT');c.body=label;c.font=font if any(ord(a)>127 for a in label) else latin
         c.align_x='CENTER';c.align_y='CENTER';c.extrude=.009;c.bevel_depth=.003;c.offset=.008;c.resolution_u=4;c.bevel_resolution=1
         o=bpy.data.objects.new(label,c);bpy.context.collection.objects.link(o)
         bpy.context.view_layer.update()
         sx=w/max(o.dimensions.x,.001);sy=h/max(o.dimensions.y,.001)
-        o.scale=(sx,sy,.8);o.location=(x,y,z);o.rotation_euler=(math.pi/2,0,turn)
+        o.scale=(sx,sy,.8);o.location=(x,y,z);o.rotation_euler=(0 if flat else math.pi/2,0,turn)
         bpy.context.view_layer.update()
         ev=o.evaluated_get(bpy.context.evaluated_depsgraph_get());m=ev.to_mesh()
         mesh(mat,[tuple(o.matrix_world@v.co) for v in m.vertices],[tuple(p.vertices) for p in m.polygons]);ev.to_mesh_clear()
@@ -97,7 +97,7 @@ def add_shops(material,box,pole,mesh,collide,materials):
             for a in [rng.uniform(0,math.pi),rng.uniform(math.pi,2*math.pi)]:
                 vx=math.cos(a)*r*1.7;vy=math.sin(a)*r*1.7
                 mesh('canopy',[(px-vx,py-vy,z-r),(px+vx,py+vy,z-r),(px+vx,py+vy,z+r),(px-vx,py-vy,z+r)],[(0,1,2,3)])
-    planter(-5.15,10.10,7.5,.66);planter(5.56,10.10,7.12,.66);planter(9.0,16.75,.7,12.65)
+    planter(-5.15,10.10,7.5,.66);planter(5.56,10.10,7.12,.66);planter(9.0,15.20,.7,9.55)
     # Form the visible depth behind each pane with reveals and low-reflectance backing.
     for x in [-7.15,-3.46,3.8,7.26]:
         for jamb in [-1.13,1.13]:box('chalkwall',x+jamb,11.19,1.74,.075,.86,2.88)
@@ -128,11 +128,28 @@ def add_shops(material,box,pole,mesh,collide,materials):
             if side:text(label,13.59,16.72-offset,3.27,width,.54,mat,-math.pi/2)
             else:text(label,19+offset,10.585,3.27,width,.54,mat)
     box('cream',22.38,10.57,3.25,1.0,.08,.47);text('한티점',22.38,10.515,3.25,.76,.26,'charcoal')
+    box('cream',13.56,13.18,3.27,.09,1.28,.52)
+    text('한티점',13.50,13.18,3.27,.94,.31,'charcoal',-math.pi/2)
+    material('snack glazing',(.34,.43,.42),.17,.05)
+    glazing=materials['snack glazing']
+    glazing.node_tree.nodes.get('Principled BSDF').inputs['Alpha'].default_value=.22
+    # Recessed, framed doorway on the main-road face. The alley has fixed windows.
+    box('charcoal',17.64,11.34,1.43,1.75,.12,2.55)
+    box('snack glazing',17.64,11.25,1.55,1.52,.04,2.00)
+    box('silver',18.19,11.16,1.38,.04,.08,.38)
+    box('granite',17.64,10.90,.19,1.81,.82,.16)
     for x in [15.25,17.74,20.23,22.72]:
-        box('charcoal',x-1.20,11.05,1.65,.06,.62,2.27);box('pink',x,10.70,.68,2.46,.045,.44)
+        box('charcoal',x-1.20,11.05,1.65,.06,.62,2.27)
+        if x!=17.74:
+            box('snack glazing',x,10.80,1.72,2.39,.025,1.67)
+            box('chalkwall',x,10.70,.65,2.41,.045,.54)
+            box('pink',x,10.65,.96,2.41,.04,.10)
     for y in [12.2,14.75,17.3,19.85]:
-        box('charcoal',14.02,y-1.24,1.64,.62,.06,2.24);box('pink',13.70,y,.68,.045,2.48,.44)
+        box('charcoal',14.02,y-1.24,1.64,.62,.06,2.24);box('chalkwall',13.70,y,.65,.045,2.48,.54)
+        box('pink',13.66,y,.96,.035,2.48,.10)
+        box('snack glazing',13.76,y,1.74,.025,2.42,1.64)
     for x in [15.25,17.74,20.23,22.72]:
+        if x==17.74:continue
         for z in [.93,2.53]:box('silver',x,10.69,z,2.46,.06,.045)
         text('소풍',x,10.704,1.76,.58,.20,'cream')
     for y in [12.2,14.75,17.3,19.85]:
@@ -140,5 +157,30 @@ def add_shops(material,box,pole,mesh,collide,materials):
     for k,t in enumerate(['올바른','영어']):
         x=18.25+k*2.12;box('chalkwall',x,10.84,5.6,1.53,.06,.63);text(t,x,10.79,5.6,1.15,.43,'charcoal')
     for x in [14.1,23.85]:box('pink',x,10.60,1.65,.37,.13,2.42)
-    mesh('awning',[(14,10.6,2.94),(23.9,10.6,2.94),(23.9,9.96,2.65),(14,9.96,2.65)],[(0,1,2,3)])
-    box('awning',18.95,9.95,2.60,9.92,.06,.13)
+    mesh('awning',[(13.97,10.6,2.94),(19.72,10.6,2.94),(19.72,9.84,2.66),(13.97,9.84,2.66)],[(0,1,2,3)])
+    box('awning',16.845,9.84,2.59,5.75,.06,.13)
+
+    # Alley elevation visible from the intersection in reference frames 06 and 08.
+    box('granite',14.01,16.82,.28,.48,12.16,.50)
+    box('chalkwall',15.07,17.56,1.51,.14,11.61,2.69)
+    box('charcoal',13.87,21.98,1.61,.35,2.61,2.96)
+    box('pink',13.58,11.10,1.67,.12,.83,2.28)
+    box('cream',13.50,11.10,1.67,.04,.73,2.18)
+
+    # Close the rear and party wall up to the existing upper-storey footprint.
+    # Their unobserved elevations continue the shell without invented openings.
+    box('tile',16.14,23.35,1.68,4.54,.22,3.36)
+    # The north elevation has a shaded vehicle bay with structural piers (frame 40).
+    box('tile',21.29,23.35,3.02,5.76,.22,.70)
+    for x in [18.51,21.27,24.03]:box('granite',x,23.25,1.34,.23,.42,2.68)
+    box('charcoal',21.30,21.91,1.35,5.73,.14,2.70)
+    box('stone',21.30,22.60,.085,5.73,1.50,.17)
+    box('stone',21.30,22.60,2.65,5.73,1.50,.14)
+    box('stone',18.48,22.61,1.36,.20,1.52,2.72)
+    box('tile',24.05,17.27,1.68,.24,12.38,3.36)
+    box('tile',13.98,22.82,1.68,.22,1.28,3.36)
+    box('granite',19.02,23.46,.23,10.30,.08,.46)
+
+    from surveyed_frontages import add_frontages
+    add_frontages(box,pole,text,collide)
+    text('30',12.38,14.15,.019,.64,2.12,'paint',math.pi,flat=True)

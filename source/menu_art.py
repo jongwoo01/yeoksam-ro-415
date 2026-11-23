@@ -28,3 +28,20 @@ for i in range(4):
             x=rng.randint(59,125);y=rng.randint(cy-46,cy+10);d.rounded_rectangle((x,y,x+15,y+7),4,fill=rng.choice(['#d77f44','#e69d60','#c36d40']))
     d.line((44,cy+88,145,cy+88),fill='#80596b',width=2)
 im.save(dst/'food-strip.jpg',quality=90)
+
+# Recreate the window vinyl visible on the side elevation in street-view frame 36.
+hangul='/System/Library/Fonts/AppleSDGothicNeo.ttc'
+for dark in (False,True):
+    sheet=Image.new('RGB',(640,320),'#191820' if dark else '#e9dae2')
+    brush=ImageDraw.Draw(sheet)
+    if dark:
+        brush.text((320,163),'소풍',font=ImageFont.truetype(hangul,86,index=6),fill='#f5f4f0',anchor='mm')
+        brush.ellipse((387,97,398,107),fill='#f5f4f0')
+    else:
+        brush.rectangle((0,0,640,54),fill='#c85b91')
+        brush.text((320,28),'소 풍    김 밥    분 식',font=ImageFont.truetype(hangul,24),fill='#fff0f6',anchor='mm')
+        for x in [125,495]:
+            brush.text((x,178),'소풍',font=ImageFont.truetype(hangul,45,index=6),fill='#473341',anchor='mm')
+        for x in [270,361]:brush.ellipse((x-24,180,x+24,228),outline='#b894b0',width=5)
+        brush.line([(270,204),(302,161),(331,205),(270,204),(318,181),(353,165),(361,204)],fill='#b894b0',width=5)
+    sheet.save(dst/('snack-window-'+('dark' if dark else 'frosted')+'.jpg'),quality=94)

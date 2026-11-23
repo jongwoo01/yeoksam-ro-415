@@ -2,7 +2,7 @@
 import random
 def add_parking(material,box,mesh):
     rng=random.Random(34)
-    palette=[(.27,.26,.23),(.38,.36,.31),(.23,.23,.22),(.33,.30,.26)]
+    palette=[(.32,.32,.30),(.36,.355,.33),(.30,.30,.29),(.345,.33,.30)]
     for i,shade in enumerate(palette):material('court slab '+str(i),shade,.89)
     # Flush running-bond pavers. Their texture varies by stone rather than by row.
     box('mortar',-.3,28.03,-.016,19.62,8.04,.05)
@@ -53,3 +53,11 @@ def add_parking(material,box,mesh):
         z=rng.uniform(base-.22,crest+.18)
         y=31.84+rng.uniform(-.085,.04);r=rng.uniform(.10,.25)
         mesh('canopy',[(x-r,y,z-r),(x+r,y-.018,z-r),(x+r,y+.04,z+r),(x-r,y+.038,z+r)],[(0,1,2,3)])
+
+    # Long drainage channel across the entrance and alternating rough stone inserts (41, 43).
+    box('charcoal',9.33,28.68,.070,.26,7.14,.040)
+    for j in range(84):box('silver',9.33,25.16+j*.083,.101,.24,.012,.012)
+    for row,col in [(3,1),(4,7),(6,4),(8,10),(9,2)]:
+        box('granite',-9+(col+.5)*18/14,24.105,.65+row*1.20,.64,.07,.49)
+    for k in range(3):
+        x=-7.9+k*2.1;box('granite',x,30.97,.19,.69,.49,.37)

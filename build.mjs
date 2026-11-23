@@ -3,8 +3,8 @@ import {cp, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {gzipSync} from 'node:zlib';
 const output='dist';
 await mkdir(output,{recursive:true});
-const files=['index.html','street.js','walker.js','street-route.js','contact-light.js','aerial.webp',
-  'knit-motion.json','knit-man.glb','knit-woman.glb','walkways.json','obstacles.json',
+const files=['index.html','street.js','walker.js','touch-controls.js','street-boundary.js','street-route.js','contact-light.js','aerial.webp',
+  'knit-motion.json','knit-man.glb','knit-woman.glb','walkways.json','obstacles.json','camera-volume.bin',
   'lib','utils','props/water_manhole_cover'];
 for(const file of files)await cp('public/'+file,output+'/'+file,{recursive:true});
 const model=await readFile('public/street.glb');

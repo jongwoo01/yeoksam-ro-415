@@ -55,30 +55,59 @@ def border(a,b,mat,width,top):
     nx,ny=-dy/length*width/2,dx/length*width/2
     pts=[(a[0]+nx,a[1]+ny),(a[0]-nx,a[1]-ny),(b[0]-nx,b[1]-ny),(b[0]+nx,b[1]+ny)]
     mesh(mat,[(x,y,z) for z in [0,top] for x,y in pts],[(4,5,6,7),(0,1,5,4),(1,2,6,5),(2,3,7,6),(3,0,4,7)])
-paving(-11.1,-6.5,-76.5,76.5,-76.5,76.5)
+for left,right in [(-76.5,12.96),(18.58,76.5)]:
+    paving(-11.1,-7.58,left,right,left,right)
+    if left<0:paving(-7.58,-6.5,left,12.96,left,11.94)
+    else:paving(-7.58,-6.5,18.58,right,19.60,right)
+    near=12.96 if left<0 else 18.58
+    tip=11.94 if left<0 else 19.60
+    border((near,-7.58),(tip,-6.5),'curb',.11,.15)
+    border((near,-24.75),(near,-7.58),'ochre',.078,.012)
+paving(-24.6,-11.1,12.83,12.98,12.83,12.98)
+paving(-24.6,-11.1,18.55,18.76,18.55,18.76)
 for sign,edge in [(-1,9.52),(1,13.35)]:
     radius=1.1;cx=edge+sign*radius;cy=6.5+radius
     arc=[(cx-sign*radius*math.sin(i*math.pi/24),cy-radius*math.cos(i*math.pi/24)) for i in range(13)]
     edgepts=arc+[(edge,11.1),(edge,23.4)]
     for (x0,y0),(x1,y1) in zip(edgepts,edgepts[1:]):
         other=(-76.5 if sign<0 else 76.5) if y0<11.1 else (9.0 if sign<0 else 13.88)
-        paving(y0,y1,min(other,x0),max(other,x0),min(other,x1),max(other,x1))
+        if sign<0 and y0<11.1:
+            paving(y0,y1,other,-27.0,other,-27.0)
+            paving(y0,y1,-22.14,x0,-22.14,x1)
+        else:
+            paving(y0,y1,min(other,x0),max(other,x0),min(other,x1),max(other,x1))
         border((x0,y0),(x1,y1),'curb',.12,.15)
     stripe=[(cx-sign*(radius+.21)*math.sin(i*math.pi/24),cy-(radius+.21)*math.cos(i*math.pi/24)) for i in range(13)]
     stripe.append((edge-sign*.21,23.4))
     for a,b in zip(stripe,stripe[1:]):border(a,b,'ochre',.082,.009)
 for side in [-1,1]:
-    for left,right in ([(-76.5,8.42),(14.45,76.5)] if side==1 else [(-76.5,76.5)]):
+    for left,right in ([(-76.5,-27.0),(-22.14,8.42),(14.45,76.5)] if side==1 else [(-76.5,11.94),(19.60,76.5)]):
         count=math.ceil(right-left)
         for j in range(count):
             x=left+(j+.5)*(right-left)/count
             box('curb',x,side*6.50,.074,(right-left)/count-.008,.12,.148)
         box('ochre',(left+right)/2,side*6.29,.004,right-left,.082,.008)
 # Zebra markings visible beside the shop corner in shots 04 and 06.
-for j in range(3):
-    box('paint',10.28+j*1.17,8.32,.007,.45,1.84,.012)
+for j in range(5):
+    box('paint',9.91+j*.74,8.32,.007,.27,1.84,.012)
 for j in range(11):
-    box('paint',16.85,-5.85+j*1.17,.007,2.42,.45,.012)
+    box('paint',16.00,-5.85+j*1.17,.007,2.42,.45,.012)
+# Frames 35,38,42: yellow centre dashes, directional arrows and a narrow gutter.
+for y in range(12,90,6):
+    box('ochre',11.435,y,.009,.064,3.38,.014)
+for y in [24,41,63]:
+    for direction in [-1,1]:
+        x=11.435+direction*.93
+        box('paint',x,y,.012,.11,1.42,.014)
+        mesh('paint',[(x-.27,y+direction*.60,.021),(x+.27,y+direction*.60,.021),(x,y+direction*1.44,.021)],[(0,1,2),(2,1,0)])
+for y0,y1 in [(32.0,49.2),(55.7,91.0)]:
+    for left,right in [(8.60,9.52),(13.35,13.93)]:
+        paving(y0,y1,left,right,left,right)
+        edge=right if left<10 else left
+        border((edge,y0),(edge,y1),'curb',.11,.15)
+        border((edge+(.13 if left<10 else -.13),y0),(edge+(.13 if left<10 else -.13),y1),'ochre',.065,.010)
+for j in range(10):
+    box('ochre' if j%2 else 'paint',9.74+j*.382,48.3,.014,.382,1.74,.017)
 for x in range(-75,76,7):
     for y in [-3.15,3.15]:box('paint',x,y,.006,3.4,.11,.012)
 # Facades have recessed glazing, reveals, sills and individually varied blinds.
@@ -89,15 +118,26 @@ def building(x,y,w,d,floors,style,hero=False,retail=False):
         box(mat,x+u,front-side*depth,z,width,thick,height)
     height=4+floors*3.05
     collide(x,y,w,d)
-    if hero or retail:box(style,x,y,(height+3.3)/2,w,d,height-3.3)
+    signed_front=side<0 and x in (7.5,-6.7,24.21)
+    custom_front=hero or retail or signed_front
+    if custom_front:box(style,x,y,(height+3.3)/2,w,d,height-3.3)
     else:box(style,x,y,height/2,w,d,height)
-    if not (hero or retail):face('charcoal',0,.11,2,w-.28,.21,3.76)
+    if signed_front:
+        # Frame two sides with recessed walls so the window reveals and returns have a back.
+        box('window reveal',x,y-.58,1.66,w-.18,d-4.26,3.30)
+        box('stone',x,y-d/2+.11,1.69,w,.22,3.38)
+        box('stone',x,y,3.24,w,d,.14)
+        box('wood',x,y,.16,w,d,.19)
+        closed_x=x+(-1 if x==7.5 else 1)*w*.5
+        box(style,closed_x,y,1.66,.18,d,3.32)
+    if not custom_front:face('charcoal',0,.11,2,w-.28,.21,3.76)
     cols=max(3,round(w/(2.6 if hero else 3.2))); pitch=(w-.5)/cols
     for col in range(cols):
         u=(col+.5-cols/2)*pitch
-        if not (hero or retail):face('smoke',u,.25,1.88,pitch-.14,.10,3.37)
-        if not (hero or retail):face('silver',u,.32,2.8,pitch-.08,.06,.045)
-        if not (hero or retail):face('silver',u-pitch/2,.35,1.93,.07,.12,3.7)
+        if not custom_front:
+            face('smoke',u,.25,1.88,pitch-.14,.10,3.37)
+            face('silver',u,.32,2.8,pitch-.08,.06,.045)
+            face('silver',u-pitch/2,.35,1.93,.07,.12,3.7)
         for floor in range(floors):
             z=5.52+floor*3.05
             ww=pitch-.09 if hero else pitch-.42
@@ -108,11 +148,11 @@ def building(x,y,w,d,floors,style,hero=False,retail=False):
             face('stone',u,.20,z-hh/2,ww+.09,.34,.095)
             if random.random()<.26:
                 face('silver',u,.183,z+hh*.34,ww*.92,.025,.22)
-    if not (hero or retail):face(style,0,.43,3.65,w-.18,.61,.90)
+    if not custom_front:face(style,0,.43,3.65,w-.18,.61,.90)
     face('stone',0,.29,height,w+.24,.65,.32)
     if hero:
         for u in [-w/2+.30,w/2-.30]:face('stone',u,.46,1.66,.57,.8,3.28)
-    if not (hero or retail):
+    if not custom_front:
         # Facade families keep continuous shop bands, inset bays, and projecting bays distinct.
         family=(round(x/3)+floors)%3
         if family==0:
@@ -130,6 +170,7 @@ def building(x,y,w,d,floors,style,hero=False,retail=False):
             for u in [-w*.36,w*.34]:
                 face('charcoal',u,.49,2.38,w*.19,.93,.15)
             face('stone',0,.33,height-.36,w+.12,.70,.22)
+    if not (hero or retail):
         # Side elevations get inset-looking, subdivided windows and lintels as well.
         for edge in [-1,1]:
             for j in range(3):
@@ -140,7 +181,32 @@ def building(x,y,w,d,floors,style,hero=False,retail=False):
                     box('smoke',xx,yy,zz,.10,1.67,1.64)
                     box('silver',xx+edge*.06,yy,zz,.043,.043,1.63)
                     box(style,xx+edge*.075,yy,zz-.84,.23,1.89,.10)
-    if floors>2:box('charcoal',x+w*.17,y,height+.9,w*.21,d*.27,1.8)
+    # Reverse elevations are visible from the courts and the outer walking loop.
+    if not (hero or retail):
+        rear=y+side*d/2
+        for level in range(floors):
+            z=5.46+level*3.05
+            for j in range(cols):
+                xx=x+(j+.5-cols*.5)*pitch
+                box('charcoal',xx,rear+side*.05,z,pitch*.57,.09,1.49)
+                box('tint',xx,rear+side*.11,z,pitch*.51,.045,1.33)
+                box('silver',xx,rear+side*.15,z-.29,pitch*.51,.04,.04)
+            box(style,x,rear+side*.08,z-1.12,w+.04,.20,.10)
+        box('charcoal',x-w*.24,rear+side*.08,1.15,1.28,.16,2.30)
+        box('stone',x-w*.24,rear+side*.34,.14,1.60,.59,.23)
+        box('stone',x,rear+side*.07,.30,w,.18,.55)
+        pole('silver',(x+w*.41,rear+side*.15,.35),(x+w*.41,rear+side*.15,height-.18),.052,.052)
+        box('silver',x,y,height+.06,w+.11,d+.11,.12)
+    for edge in [-1,1]:
+        box(style,x+edge*(w/2-.085),y,height+.18,.17,d,.36)
+        box(style,x,y+edge*(d/2-.085),height+.18,w,.17,.36)
+    if floors>2:
+        xx=x+w*.17;ww=w*.21;dd=d*.27
+        box('charcoal',xx,y,height+.9,ww,dd,1.8)
+        box('stone',xx,y,height+1.82,ww+.20,dd+.21,.14)
+        box('silver',xx,y-dd*.5-.045,height+.78,.71,.065,1.45)
+        for i in range(5):box('granite',xx+.15,y+dd*.5+.04,height+.56+i*.14,ww*.48,.08,.055)
+
 add_shops(material,box,pole,mesh,collide,materials)
 fit_windows(material,box,pole,mesh,materials)
 add_parking(material,box,mesh)
@@ -150,16 +216,41 @@ collide(.30,34.0,20.20,3.9)
 add_cars(material,mesh,collide)
 add_street_details(material,box,pole,mesh,collide)
 building(0,17.5,18,13,5,'stone',True)
-building(-15.76,17.65,12.75,12.9,4,'charcoal',retail=True)
+building(-15.76,17.65,12.75,12.9,7,'stone',retail=True)
 building(19.02,17.27,10.30,12.38,4,'tile',retail=True)
 for side in [-1,1]:
     for x in [-62,-46,-29,-16,0,17,32,49,66]:
         if side==1 and x in (-16,0,17):continue
+        if side==-1 and x in [-16,0,17]:
+            continue
+        if side==1 and x==-29:
+            building(-33.52,17.90,13.0,13.70,7,'chalkwall',retail=True)
+            continue
         w=random.choice([10.6,11.5,12.4])
         building(x,side*(17.6+random.uniform(0,1.8)),w,12,random.randint(2,6),random.choice(['plaster','brick','stone','charcoal']))
     for x in range(-75,76,15):
-        background_x=20.8 if side==1 and x==15 else x
-        building(background_x,side*40,13,12,random.randint(3,9),random.choice(['stone','plaster','brick']))
+        if side==1 and x in [-30,-15,0]:continue  # Ivy frontage already occupies the west corner.
+        background_x=20.55 if side==1 and x==15 else x
+        if side<0 and x==15:
+            building(5.1,-39.42,14.62,10.60,1,'plaster')
+            continue
+        if side<0 and x==0:continue
+        building(background_x,side*40,13.4,12,random.randint(3,7),random.choice(['stone','plaster','brick']))
+building(7.5,-18.17,10.72,12.71,5,'silver')
+building(-6.7,-18.24,11.72,12.87,5,'chalkwall')
+building(-19.88,-18.44,11.81,12.82,4,'charcoal')
+building(24.21,-18.41,11.10,12.7,2,'plaster')
+# Continue the cross street and the sightline beyond the northern intersection.
+for x,y,w,d,h,mat in [
+    (2.48,41.94,12.8,12.54,4,'stone'),(1.83,62.56,13.61,13.12,4,'chalkwall'),
+    (20.66,62.18,13.41,12.40,4,'stone'),(-15.36,62.34,16.06,12.47,5,'brick'),
+    (37.08,64.27,15.14,15.11,5,'chalkwall'),(-31.95,61.91,13.90,11.96,4,'stone'),
+    (2.02,79.15,13.81,16.19,5,'brick'),(21.21,78.14,14.55,14.47,5,'chalkwall'),
+    (2.09,96.33,13.58,16.07,5,'stone'),(21.16,96.44,14.20,16.52,4,'brick')]:
+    building(x,y,w,d,h,mat)
+box('asphalt',10.7,91,-.25,75,40,.49)
+from west_court import add_west_court
+add_west_court(box,pole,mesh,collide)
 def crown(x,y,z,scale):
     # Sparse cutout sprays at several angles preserve the gaps between branches.
     for _ in range(57):
@@ -203,12 +294,24 @@ def tree(x,y):
     trunk=(x+.08,y,3.25)
     pole('bark',(x,y,.16),trunk,.18,.105,10)
     for i in range(9):
-        a=i*2.4; rad=random.uniform(.7,1.6); top=random.uniform(4.4,6.4)
+        a=i*2.4; rad=random.uniform(1.3,2.35); top=random.uniform(4.9,7.9)
         mid=(x+rad*.60*math.cos(a),y+rad*.60*math.sin(a),top-.85)
         end=(x+rad*math.cos(a),y+rad*math.sin(a),top)
         pole('bark',(x+.06,y,2.25+i*.10),mid,.085,.048);pole('bark',mid,end,.05,.015)
-        crown(*end,random.uniform(1.12,1.50))
+        crown(*end,random.uniform(1.49,1.91))
 material('canopy',(.8,.82,.77),.83)
+# Tree canopy behind the service drive (56), and the evergreen at the side court (39).
+for xx,yy in [(-34.30,36.41),(-27.13,37.15),(-19.85,36.28)]:
+    pole('bark',(xx,yy,.65),(xx+.22,yy,3.18),.13,.083,10)
+    for k in range(5):
+        az=k*2.40;dx=1.16*math.cos(az);dy=1.16*math.sin(az)
+        pole('bark',(xx,yy,1.94),(xx+dx,yy+dy,3.21),.057,.025,8)
+        crown(xx+dx,yy+dy,3.27,.90)
+# Continuous hedging and uneven crowns behind the retaining wall in frames 41 and 56.
+for j in range(24):
+    crown(-37.0+j*.82,35.66+random.uniform(-.26,.23),1.44+random.uniform(-.16,.42),.68)
+for j in range(20):crown(-8.28+j*.84,24.58,.79+random.uniform(-.06,.095),.32)
+for j in range(4):crown(15.03,30.53,1.48+j*.68,1.29-.20*j)
 for side in [-1,1]:
     for x in range(-57,65,12):
         tree(x+(2 if side>0 else -1)+random.uniform(-.85,.85),side*(7.47+random.uniform(-.16,.16)))
@@ -226,7 +329,8 @@ for x in range(-67,68,3):
         if abs(x+3-12)>=5:pole('charcoal',(x,0,z),(x+3,0,z),.023,.023)
     collide(x,0,.11,.11,.74)
     if abs(x+3-12)>=5:collide(x+1.5,0,3,.046,.573)
-for y in [-.13,.13]:box('ochre',0,y,.023,143,.075,.014)
+for y in [-.13,.13]:
+    for l,r in [(-71.5,8),(19.5,71.5)]:box('ochre',(l+r)/2,y,.023,r-l,.075,.014)
 # Extend only the visual horizon outside the playable circle.
 for end in [-1,1]:
     box('asphalt',end*129,0,-.252,95,75,.5)
@@ -240,7 +344,18 @@ for end in [-1,1]:
                 box('smoke',x,y-edge*6.57,z,width-.8,.11,1.44)
                 for k in [-2,-1,0,1,2]:box('silver',x+k*2.2,y-edge*6.66,z,.053,.062,1.44)
     for j in range(4):
-        h=15+6*j;box('stone',end*(160+3*j),-22+j*15,h/2,16,14,h)
+        building(end*(160+3*j),-24+j*16,14,12,4+j,'stone')
+# Far-side fabric closes the view down the secondary streets. Keep breaks at road mouths.
+for x,y,w,d,n,style in [
+    (-67,29,11,10,4,'chalkwall'),(63,29,12,11,5,'stone'),
+    (-54,54,12,14,6,'plaster'),(52,54,14,14,4,'brick'),
+    (-51,-31,14,10,4,'stone'),(44,-31,9,9,3,'plaster'),
+    (-45,84,15,15,9,'chalkwall'),(-22,91,12,15,11,'stone'),
+    (-6,109,16,13,10,'chalkwall'),(13,125,17,16,10,'plaster'),
+    (38,99,13,14,8,'stone'),(-46,111,18,16,8,'stone'),
+    (-55,-65,17,14,8,'stone'),(-23,-68,18,13,8,'chalkwall'),
+    (4,-66,17,14,6,'plaster'),(33,-68,18,14,7,'stone'),(60,-67,16,13,9,'chalkwall')]:
+    building(x,y,w,d,n,style)
 # Load generated image finishes into the source scene and embed them in glTF.
 finish_names={'tile':'tile.jpg','granite':'granite.jpg','bark':'bark-photo.jpg','violet':'violet.jpg','canopy':'leaf-photo.png','paver':'sidewalk.jpg'}
 for key,file in finish_names.items():
@@ -254,14 +369,28 @@ pbr={'asphalt':('asphalt_04',4.2),'brick':('brick_wall_006',3.1),'stone':('brush
 for name,(stem,scale) in pbr.items():
     m=materials[name];nodes=m.node_tree.nodes;bs=nodes.get('Principled BSDF')
     for kind in ['diff','nor_gl']:
-        pic=bpy.data.images.load(str(root/'public/materials'/f'{stem}_{kind}.jpg'),check_existing=True);pic.pack()
+        file=root/'public/materials'/f'{stem}_{kind}.jpg'
+        if name in ['stone','plaster'] and kind=='diff':file=root/'source/finishes'/(name+'-neutral.jpg')
+        pic=bpy.data.images.load(str(file),check_existing=True);pic.pack()
         tex=nodes.new('ShaderNodeTexImage');tex.image=pic
         if kind=='diff':m.node_tree.links.new(tex.outputs['Color'],bs.inputs['Base Color'])
         else:
             pic.colorspace_settings.name='Non-Color'
             normal=nodes.new('ShaderNodeNormalMap');normal.inputs['Strength'].default_value=.58
             m.node_tree.links.new(tex.outputs['Color'],normal.inputs['Color']);m.node_tree.links.new(normal.outputs['Normal'],bs.inputs['Normal'])
+def lane_x(x,y):
+    if y<6.0:return x
+    return x+2.65*min(1.,max(0.,(x-9.52)/(13.35-9.52)))
+for l in bounds:
+    y=-(l[2]+l[3])*.5
+    l[0]=lane_x(l[0],y);l[1]=lane_x(l[1],y)
+for strip in walkways:
+    for idx in [2,3,4,5]:strip[idx]=lane_x(strip[idx],strip[0])
+for obj in bpy.context.scene.objects:
+    if obj.type=='MESH':
+        for vertex in obj.data.vertices:vertex.co.x=lane_x(vertex.co.x,vertex.co.y)
 for mat,(verts,faces) in buffers.items():
+    verts=[(lane_x(x,y),y,z) for x,y,z in verts]
     data=bpy.data.meshes.new(mat);data.from_pydata(verts,[],faces);data.update()
     obj=bpy.data.objects.new(mat,data);bpy.context.collection.objects.link(obj);data.materials.append(materials[mat])
     if mat=='windscreen':
@@ -291,6 +420,10 @@ from cafe import furnish,studio
 furnish()
 from occlusion import bake
 bake(bpy.context.scene.objects)
+from camera_volume import bake_camera_volume
+bake_camera_volume(bpy.context.scene.objects,root/"public/camera-volume.bin")
+from snack_graphics import add_snack_graphics
+add_snack_graphics(lane_x)
 studio(root)
 bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=str(root/'source/street.blend'))

@@ -1,3 +1,5 @@
+import {radius,distanceFromCenter} from './street-boundary.js';
+import {bindTouchControls} from './touch-controls.js';
 import * as T from 'three';
 import {createStreetRouter} from './street-route.js';
 import {GLTFLoader} from './lib/GLTFLoader.js';
@@ -6,7 +8,7 @@ const jogSpeed=6, sprintSpeed=10;
 const movementKeys=new Set(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Space']);
 
 
-export async function createWalker(scene,camera,boxes,canvas,walkways){
+export async function createWalker(scene,camera,boxes,canvas,walkways,city){
   function floorAt(x,z){
     const y=-z;
     for(const [start,end,left,right,nextLeft,nextRight] of walkways){
@@ -18,6 +20,10 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
   }
   const player=new T.Group();scene.add(player);
   const loader=new GLTFLoader();
+  const volumePromise=fetch('./camera-volume.bin').then(async response=>{
+    if(!response.ok)throw Error('Camera volume unavailable');
+    return new Uint8Array(await response.arrayBuffer());
+  });
   const motion=await fetch('./knit-motion.json?v=3').then(response=>response.json());
   const clips=motion.map(({name,duration,times,tracks})=>new T.AnimationClip(name,duration,
     Object.entries(tracks).map(([path,values])=>path.endsWith('.quaternion')
@@ -84,9 +90,16 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
     }
     return floor;
   }
+  const volume=await volumePromise;
+  function cameraBlocked(x,y,z){
+    const i=Math.floor((x+52)*2),j=Math.floor((34-z)*2),k=Math.floor(y*2);
+    if(i<0||j<0||k<0||i>=208||j>=208||k>=32)return false;
+    const bit=(j*208+i)*32+k;
+    return !!(volume[bit>>3]&(1<<(bit&7)));
+  }
   // Only nearby footprints can shorten the camera arm. Filter once per frame.
   let nearby=[];
-  const free=(x,z)=>Math.hypot(x,z+17.5)<=40&&!isObstacle(x,z,.25,pos.y);
+  const free=(x,z)=>distanceFromCenter(x,z)<=radius&&!isObstacle(x,z,.25,pos.y);
   function follow(dt,snap=false){
     const desiredY=pos.y+1.28;
     pivotY=snap?desiredY:T.MathUtils.damp(pivotY,desiredY,14,dt);
@@ -96,12 +109,13 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
     let available=distance;
     for(let d=.12;d<=distance;d+=.10){
       const z=target.z+offset.z*d;
-      if(nearby.some(box=>target.y+offset.y*d-.12<(box[4]??Infinity)&&overlaps(target.x+offset.x*d,z,.12,box))||target.y+offset.y*d<floorAt(target.x+offset.x*d,z)+.18){
+      if(cameraBlocked(target.x+offset.x*d,target.y+offset.y*d,z)||nearby.some(box=>target.y+offset.y*d-.12<(box[4]??Infinity)&&overlaps(target.x+offset.x*d,z,.12,box))||target.y+offset.y*d<floorAt(target.x+offset.x*d,z)+.18){
         available=Math.max(.09,d-.12);break;
       }
     }
     // Never ease through a wall. Ease user zoom and recovery in both directions.
     arm=snap?available:Math.min(available<distance-.001?available:Infinity,T.MathUtils.damp(arm,available,10,dt));
+    player.visible=arm>.62;
     camera.position.copy(target).addScaledVector(offset,arm);
     // Keep the high chase position but frame the next few metres of pavement as well.
     target.x-=Math.sin(yaw)*2.3;
@@ -111,6 +125,7 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
     target.addScaledVector(offset,arm-distance);
     camera.lookAt(target);
   }
+  const entrance={x:-3.5,z:4.65,angle:-.19};
   function place(x,z,angle){
     keys.clear();vertical=0;grounded=true;yaw=angle;elevation=defaultElevation;distance=defaultDistance;
     desiredYaw=yaw;desiredElevation=elevation;
@@ -128,11 +143,11 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
     if(trip)canvas.dispatchEvent(new Event('tripend'));
     trip=null;
   }
-  const reset=()=>travel(-1,8.1,-.07);
+  const reset=()=>travel(entrance.x,entrance.z,entrance.angle);
   const detail=()=>travel(-4.7,-5.9,-Math.atan2(5.4,5.9));
   const parking=()=>travel(10.1,-28.7,1.72);
   if(location.hash==='#corner')place(11.46,-2.8,-.12);
-  else place(-1,8.1,-.07);
+  else place(entrance.x,entrance.z,entrance.angle);
   canvas.addEventListener('wheel',e=>{
     if(document.body.dataset.view!=='walking')return;
     e.preventDefault();
@@ -148,32 +163,56 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
   function captureMouse(){
     if(!document.pointerLockElement)canvas.requestPointerLock?.()?.catch?.(()=>{});
   }
-  canvas.addEventListener('click',()=>{
+  canvas.addEventListener('click',e=>{
+    if((e.pointerType&&e.pointerType!=='mouse')||e.sourceCapabilities?.firesTouchEvents||(!e.pointerType&&matchMedia('(pointer:coarse)').matches))return;
     if(document.body.dataset.view!=='walking')return;
     setLook(true);captureMouse();
   });
   document.addEventListener('pointerlockchange',()=>setLook(document.pointerLockElement===canvas));
-  addEventListener('keydown',e=>{
-    if(e.code==='Escape'){
-      if(document.pointerLockElement===canvas)document.exitPointerLock();
-      setLook(false);
-    }
-  });
+  const menu=document.querySelector('#menu');
+  menu.addEventListener('pausewalk',()=>{keys.clear();setLook(false);});
+  menu.addEventListener('close',()=>setLook(true));
   addEventListener('blur',()=>setLook(false));
   let turned=false;
+  function turn(dx,dy){
+    if(!turned&&(dx||dy)){turned=true;canvas.dispatchEvent(new Event('firstlook'));}
+    desiredYaw-=dx*.0025;
+    desiredElevation=T.MathUtils.clamp(desiredElevation+dy*.002,-.15,1.04);
+  }
+  function jump(){if(grounded){vertical=8.1;grounded=false;}}
+  const picker=new T.Raycaster(),pointer=new T.Vector2();
+  const feedback=document.querySelector('#tapMark');
+  let feedbackTimer;
+  function tap(x,y){
+    const rect=canvas.getBoundingClientRect();
+    pointer.set(2*(x-rect.left)/rect.width-1,1-2*(y-rect.top)/rect.height);
+    picker.setFromCamera(pointer,camera);
+    const hit=picker.intersectObject(city,true)[0];
+    let accepted=false;
+    if(hit){
+      const p=hit.point;
+      if(Math.abs(p.y-floorAt(p.x,p.z))<.22&&
+        distanceFromCenter(p.x,p.z)<radius&&!isObstacle(p.x,p.z,.25,p.y)){
+        accepted=travel(p.x,p.z,Math.atan2(pos.x-p.x,pos.z-p.z));
+      }
+    }
+    feedback.style.left=x+'px';feedback.style.top=y+'px';
+    feedback.textContent=accepted?'':'×';feedback.hidden=false;
+    clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>feedback.hidden=true,550);
+    if(accepted)canvas.dispatchEvent(new Event('taptrip'));
+  }
+  const touch=bindTouchControls(canvas,menu,{turn:(x,y)=>turn(x*1.7,y*1.7),tap,jump,interrupt:endTrip});
   document.addEventListener('mousemove',e=>{
-    if(document.body.dataset.view!=='walking'||!looking||(e.target!==canvas&&document.pointerLockElement!==canvas))return;
-    if(!turned&&(e.movementX||e.movementY)){turned=true;canvas.dispatchEvent(new Event("firstlook"));}
-    desiredYaw-=e.movementX*.0025;
-    desiredElevation=T.MathUtils.clamp(desiredElevation+e.movementY*.0020,-.15,1.04);
+    if(e.sourceCapabilities?.firesTouchEvents||document.body.dataset.view!=='walking'||menu.open||!looking||(e.target!==canvas&&document.pointerLockElement!==canvas))return;
+    turn(e.movementX,e.movementY);
   });
   addEventListener('keydown',e=>{
-    if(e.target===selector||(e.target.closest?.('button')&&e.code==='Space')||document.body.dataset.view!=='walking'||!movementKeys.has(e.code)||e.metaKey||e.ctrlKey||e.altKey)return;
+    if(menu.open||e.target===selector||(e.target.closest?.('button')&&e.code==='Space')||document.body.dataset.view!=='walking'||!movementKeys.has(e.code)||e.metaKey||e.ctrlKey||e.altKey)return;
     e.preventDefault();
     endTrip();
     if(looking&&!e.repeat&&e.isTrusted)captureMouse();
     keys.add(e.code);
-    if(e.code==='Space'&&!e.repeat&&grounded){vertical=8.1;grounded=false;}
+    if(e.code==='Space'&&!e.repeat)jump();
   });
   addEventListener('keyup',e=>keys.delete(e.code));
   addEventListener('blur',()=>keys.clear());
@@ -209,8 +248,8 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
     }
     yaw=T.MathUtils.damp(yaw,desiredYaw,trip?3.8:36,dt);
     elevation=T.MathUtils.damp(elevation,desiredElevation,32,dt);
-    const f=down('KeyW','ArrowUp')-down('KeyS','ArrowDown'),r=down('KeyD','ArrowRight')-down('KeyA','ArrowLeft');
-    const sprint=keys.has('ShiftLeft')||keys.has('ShiftRight');
+    const f=touch.forward+down('KeyW','ArrowUp')-down('KeyS','ArrowDown'),r=touch.right+down('KeyD','ArrowRight')-down('KeyA','ArrowLeft');
+    const sprint=Math.hypot(touch.forward,touch.right)>.94||keys.has('ShiftLeft')||keys.has('ShiftRight');
     const stride=(sprint?sprintSpeed:jogSpeed)*dt/Math.max(1,Math.hypot(f,r));
     const dx=trip?routeX*routeSpeed*dt:(r*Math.cos(yaw)-f*Math.sin(yaw))*stride,dz=trip?routeZ*routeSpeed*dt:(-r*Math.sin(yaw)-f*Math.cos(yaw))*stride;
     const prevX=pos.x,prevZ=pos.z;
@@ -232,7 +271,7 @@ export async function createWalker(scene,camera,boxes,canvas,walkways){
     if(grounded){pos.y=floor;vertical=0;}
     animate(dt,moving,sprint||routeSpeed>6,grounded,f);
   }
-  return {reset,detail,parking,update(elapsed){
+  return {position:pos,reset,detail,parking,update(elapsed){
     let remaining=Math.min(elapsed,.15);
     while(remaining>.00001){const dt=Math.min(remaining,1/60);step(dt);remaining-=dt;}
     const floor=supportAt(pos.x,pos.z,pos.y),height=Math.max(0,pos.y-floor);

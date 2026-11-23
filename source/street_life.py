@@ -243,3 +243,7 @@ def add_cars(material, mesh, collide):
     car(6.25,26.76,math.pi/2,'pearl',True)
     car(3.72,26.76,math.pi/2,'graphite')
     car(1.18,26.76,math.pi/2,'pearl')
+
+    # Tiled building rear court, frame 39.
+    car(22.01,27.36,math.pi,'pearl')
+    car(22.32,30.03,math.pi,'graphite')

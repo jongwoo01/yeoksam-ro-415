@@ -1,3 +1,4 @@
+import {createBoundary} from './street-boundary.js';
 import * as T from 'three';
 import {GLTFLoader} from './lib/GLTFLoader.js';
 
@@ -28,7 +29,7 @@ export async function main(){
   renderer.toneMappingExposure=1.03;
   document.body.prepend(renderer.domElement);
   const scene=new T.Scene(), camera=new T.PerspectiveCamera(62,innerWidth/innerHeight,.08,230);
-  scene.fog=new T.FogExp2(0xc8d5db,.009);
+  scene.fog=new T.FogExp2(0xd1dbe1,.0065);
   const clock=new T.Clock();
   const light=new T.DirectionalLight(0xfff0d9,2.15);
   light.position.set(-24,42,24);light.castShadow=true;
@@ -38,7 +39,21 @@ export async function main(){
   const sky=new T.Mesh(new T.SphereGeometry(190,32,16), new T.ShaderMaterial({
     side:T.BackSide,depthWrite:false,
     vertexShader:'varying vec3 v; void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-    fragmentShader:`varying vec3 v;void main(){vec3 d=normalize(v); float h=max(d.y,0.); vec3 c=mix(vec3(.94,1.,1.04),vec3(.24,.49,.80),pow(h,.48)); float a=max(dot(d,normalize(vec3(-24.,42.,24.))),0.);c+=vec3(1.,.83,.54)*pow(a,60.)*.45;gl_FragColor=vec4(c,1.);
+    fragmentShader:`varying vec3 v;
+    float hashSky(vec2 cell){return fract(sin(dot(cell,vec2(27.13,71.29)))*4375.56);}
+    float skyNoise(vec2 point){
+      vec2 cell=floor(point), f=fract(point);f=f*f*(3.-2.*f);
+      return mix(mix(hashSky(cell),hashSky(cell+vec2(1.,0.)),f.x),
+                 mix(hashSky(cell+vec2(0.,1.)),hashSky(cell+1.),f.x),f.y);
+    }
+    void main(){
+      vec3 d=normalize(v);float h=max(d.y,0.);
+      vec3 c=mix(vec3(.94,1.,1.04),vec3(.24,.49,.80),pow(h,.48));
+      vec2 p=d.xz*3.6/(.24+h);
+      float cover=.57*skyNoise(p)+.29*skyNoise(2.1*p+3.)+.14*skyNoise(4.3*p-7.);
+      c=mix(c,vec3(.91,.93,.94),smoothstep(.29,.69,cover)*smoothstep(0.,.22,h)*.78);
+      float a=max(dot(d,normalize(vec3(-24.,42.,24.))),0.);
+      c+=vec3(1.,.83,.54)*pow(a,60.)*.45;gl_FragColor=vec4(c,1.);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     }`
@@ -79,7 +94,7 @@ export async function main(){
       };
     }
     if(mat.name.endsWith('interior daylight')){mat.color.setScalar(.25);mat.emissiveIntensity=.12;}
-    if(mat.name==='windscreen'){mat.depthWrite=false;o.castShadow=false;}
+    if(mat.name==='windscreen'||mat.name==='snack glazing'){mat.depthWrite=false;o.castShadow=false;}
     if(mat.name==='Cafe glazing'){o.castShadow=false;mat.depthWrite=false;mat.opacity=.085;mat.metalness=.18;}
     if(mat.name.startsWith('leaf'))mat.side=T.DoubleSide;
   });
@@ -123,49 +138,53 @@ export async function main(){
         vec3 ray=normalize(panePosition+t*R-probeCenter);
         vec3 reflected=textureCube(streetReflection,ray).rgb;
         float fresnel=pow(1.-clamp(abs(dot(N,V)),0.,1.),3.);
-        outgoingLight=mix(outgoingLight,reflected*vec3(.86,1.04,1.00),.36+.38*fresnel);
+        float frontage=1.-smoothstep(17.,26.,abs(panePosition.z));
+        float planeFacing=abs(N.z);
+        outgoingLight=mix(outgoingLight,reflected*vec3(.86,1.04,1.00),frontage*planeFacing*(.30+.32*fresnel));
         #include <opaque_fragment>`);
     };
   });
   pmrem.dispose();
   const canvas=renderer.domElement;
   let walked=false, turned=false, destination='', lockHint=false;
-  const panelButtons=[...document.querySelectorAll('footer [aria-controls]')];
-  function setPanel(open){
-    for(const button of panelButtons){
-      const visible=button===open;
-      document.getElementById(button.getAttribute('aria-controls')).hidden=!visible;
-      button.setAttribute('aria-expanded',String(visible));
-    }
+  const menu=document.querySelector('#menu');
+  const settings=document.querySelector('#settings');
+  function openMenu(){
+    if(menu.open||!['walking','aerial'].includes(document.body.dataset.view))return;
+    menu.dispatchEvent(new Event('pausewalk'));
+    if(document.pointerLockElement===canvas)document.exitPointerLock();
+    menu.showModal();
   }
-  for(const button of panelButtons)button.onclick=()=>setPanel(button.getAttribute('aria-expanded')==='true'?null:button);
+  settings.onclick=openMenu;
+  document.querySelector('#closeMenu').onclick=()=>menu.close();
+  menu.addEventListener('close',()=>{if(document.body.dataset.view==='walking')canvas.focus();});
+  const touchUI=matchMedia('(any-pointer:coarse)');
   function updateStatus(){
-    status.textContent=destination?destination+' 이동 중 · WASD로 직접 걷기':
-      lockHint?'Esc를 누르면 커서를 쓸 수 있어요':
-      walked&&turned?'':'마우스로 둘러보고 WASD로 걸어보세요';
+    status.textContent=destination?destination+(touchUI.matches?' 이동 중 · 조이스틱으로 직접 걷기':' 이동 중 · WASD로 직접 걷기'):
+      lockHint?'Esc로 설정을 열 수 있어요':
+      walked&&turned?'':touchUI.matches?'바닥을 탭해 이동 · 화면을 밀어 둘러보기':'마우스로 둘러보고 WASD로 걸어보세요';
   }
   canvas.addEventListener('firstwalk',()=>{walked=true;updateStatus();});
   canvas.addEventListener('firstlook',()=>{turned=true;updateStatus();});
+  canvas.addEventListener('taptrip',()=>{destination='선택한 지점으로';updateStatus();});
   canvas.addEventListener('tripend',()=>{destination='';updateStatus();});
   let shownLock=false;
   document.addEventListener('pointerlockchange',()=>{
     if(document.pointerLockElement===canvas&&!shownLock){
-      shownLock=lockHint=true;setPanel(null);updateStatus();
+      shownLock=lockHint=true;updateStatus();
       setTimeout(()=>{lockHint=false;updateStatus();},2800);
-    }else if(!document.pointerLockElement){lockHint=false;updateStatus();}
+    }else if(!document.pointerLockElement){lockHint=false;updateStatus();if(document.hasFocus())openMenu();}
   });
   addEventListener('keydown',e=>{
-    if(document.body.dataset.view!=='walking')return;
-    if(e.key==='?'){
-      if(document.pointerLockElement)document.exitPointerLock();
-      panelButtons[1].click();
-    }else if(e.key==='Escape')setPanel(null);
+    if(e.key!=='Escape'||e.repeat)return;
+    e.preventDefault();
+    if(menu.open)menu.close();else openMenu();
   });
-  canvas.addEventListener('click',()=>setPanel(null));
   progress.value=92;
-  const walker=await createWalker(scene,camera,boxes,canvas,walkways);
+  const walker=await createWalker(scene,camera,boxes,canvas,walkways,model.scene);
   const body=document.body,arrival=document.querySelector('#arrival'),enter=document.querySelector('#enter');
   const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+  const boundary=createBoundary(scene,walker.position,reducedMotion);
   let flightStart=0;
   const aerial=new T.Vector3(-19,30,4);
   const landing=camera.position.clone();
@@ -173,11 +192,13 @@ export async function main(){
   const landingTarget=new T.Vector3();
   camera.getWorldDirection(landingTarget).multiplyScalar(9).add(landing);
   const aerialTarget=new T.Vector3(5,1,-8),focus=new T.Vector3();
+  let arrivalAction=null;
   function finishFlight(){
     body.dataset.view='walking';
     camera.position.copy(landing);camera.lookAt(landingTarget);
-    document.querySelector('footer').hidden=false;
+
     canvas.tabIndex=-1;canvas.focus({preventScroll:true});updateStatus();
+    if(arrivalAction){const action=arrivalAction;arrivalAction=null;startTrip(action);}
   }
   enter.onclick=()=>{
     if(body.dataset.view!=='aerial')return;
@@ -186,12 +207,20 @@ export async function main(){
     body.dataset.view='descending';
     if(reducedMotion.matches)finishFlight();
   };
+  function startTrip(action){
+    if(walker[action]()){
+      destination=document.getElementById(action).textContent;updateStatus();
+    }else status.textContent='여기서는 경로를 찾을 수 없어요. 조금 이동한 뒤 다시 선택해 주세요.';
+  }
   for(const action of ['reset','detail','parking']){
-    const button=document.getElementById(action);
-    button.onclick=()=>{
-      setPanel(null);canvas.focus({preventScroll:true});
-      if(walker[action]()){destination=button.textContent;updateStatus();}
-      else status.textContent='여기서는 경로를 찾을 수 없어요. 조금 이동한 뒤 다시 선택해 주세요.';
+    document.getElementById(action).onclick=()=>{
+      menu.close();
+      if(body.dataset.view==='aerial'){
+        arrivalAction=action==='reset'?null:action;
+        enter.click();
+      }else{
+        canvas.focus({preventScroll:true});startTrip(action);
+      }
     };
   }
   addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
@@ -199,11 +228,16 @@ export async function main(){
   renderer.shadowMap.needsUpdate=true;
   let draw=createContactPass(renderer,camera);
   let sampleSeconds=0, sampleFrames=0;
-  renderer.setAnimationLoop(()=>{
+  let lastIdleFrame=-Infinity;
+  renderer.setAnimationLoop(now=>{
+    if(document.hidden)return;
+    const resting=menu.open||body.dataset.view==='aerial';
+    if(resting&&now-lastIdleFrame<(menu.open?200:50))return;
+    lastIdleFrame=now;
     const dt=clock.getDelta();
     breeze.value+=Math.min(dt,.12);
     const view=body.dataset.view;
-    if(view==='walking')walker.update(dt);
+    if(view==='walking'&&!menu.open){walker.update(dt);boundary(breeze.value);}
     else if(view==='loading'||view==='aerial'){
       camera.position.copy(aerial);camera.lookAt(aerialTarget);
     }else if(view==='descending'){
@@ -220,14 +254,15 @@ export async function main(){
       body.dataset.view='aerial';
       document.querySelector('#loading').hidden=true;enter.hidden=false;
     }
-    if(document.hidden||dt>.25){sampleSeconds=0;sampleFrames=0;return;}
+    if(resting||dt>.25){sampleSeconds=0;sampleFrames=0;return;}
     sampleSeconds+=dt;sampleFrames++;
     if(sampleSeconds>=1.5){
       if(sampleFrames/sampleSeconds<32){
         draw=scene=>renderer.render(scene,camera);
       }
-      if(sampleFrames/sampleSeconds<40&&renderer.getPixelRatio()>.8){
-        renderer.setPixelRatio(Math.max(.8,renderer.getPixelRatio()-.2));
+      const minimum=touchUI.matches&&sampleFrames/sampleSeconds<26?.7:.8;
+      if(sampleFrames/sampleSeconds<40&&renderer.getPixelRatio()>minimum){
+        renderer.setPixelRatio(Math.max(minimum,renderer.getPixelRatio()-.2));
       }
       sampleSeconds=0;sampleFrames=0;
     }

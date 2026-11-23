@@ -55,3 +55,13 @@ for name in ['tile','granite','bark','sidewalk','violet']:
         detail=ImageOps.colorize(ImageOps.autocontrast(photo),'#898379','#ffffff')
         im=Image.blend(im,ImageChops.multiply(im,detail),.83)
     im.save(dst/(name+'.jpg'),quality=90)
+
+# Preserve the grain of the scanned concrete while matching the lighter street facades.
+concrete = Image.open(dst.parents[1] / 'public/materials/brushed_concrete_03_diff.jpg').convert('L')
+for name, channels in [
+    ('stone', [(1.10, 42), (1.10, 41), (1.06, 40)]),
+    ('plaster', [(.82, 107), (.82, 104), (.82, 97)]),
+]:
+    tinted = [concrete.point([round(value * scale + offset) for value in range(256)])
+              for scale, offset in channels]
+    Image.merge('RGB', tinted).save(dst / (name + '-neutral.jpg'), quality=91)

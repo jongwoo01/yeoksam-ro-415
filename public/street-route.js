@@ -1,8 +1,9 @@
+import {radius,distanceFromCenter} from './street-boundary.js';
 // Find a walkable polyline with clearance for the character, then remove extra turns.
 export function createStreetRouter(boxes){
   const margin=.25;
   const blocks=boxes.map(([l,r,b,t,height=Infinity])=>[l-margin,r+margin,b-margin,t+margin,height]);
-  const inside=(x,z)=>Math.hypot(x,z+17.5)<40;
+  const inside=(x,z)=>distanceFromCenter(x,z)<radius;
   function clear(a,b){
     if(!inside(b.x,b.z))return false;
     const dx=b.x-a.x,dz=b.z-a.z;
