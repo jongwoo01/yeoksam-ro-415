@@ -10,6 +10,7 @@
 !public/knit-*.glb
 !public/knit-motion.json
 !public/street.glb
+!public/street-low.glb
 !public/obstacles.json
 !public/walkways.json
 !public/aerial.webp

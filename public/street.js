@@ -7,26 +7,37 @@ import {createContactPass} from './contact-light.js';
 import {createWalker} from './walker.js?v=walk4';
 
 const status=document.querySelector('#status');
-async function loadStreet(progress){
-  const file='./street.glb?v=cars-6';
-  const bytes=await new T.FileLoader().setResponseType('arraybuffer').loadAsync(file,event=>{
-    if(event.total)progress.value=Math.min(75,75*event.loaded/event.total);
-  });
+async function showStage(label,text){
+  label.textContent=text;
+  // Yield a paint before the next synchronous preparation step.
+  await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+}
+async function loadStreet(label,low){
+  const file=low?'./street-low.glb':'./street.glb?v=cars-6';
+  const bytes=await new T.FileLoader().setResponseType('arraybuffer').loadAsync(file);
+  await showStage(label,'거리 모델 펼치는 중…');
   const header=new Uint8Array(bytes,0,2);
   const data=header[0]===31&&header[1]===139
     ?await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()
     :bytes;
   return new GLTFLoader().parseAsync(data,'./');
 }
-export async function main(){
-  const progress=document.querySelector("progress");
+export async function main(quality){
+  const low=quality==='low';
   const label=document.querySelector("#loadLabel");
   const touchUI=matchMedia('(any-pointer:coarse)');
-  const compact=touchUI.matches || navigator.deviceMemory<=4 || navigator.hardwareConcurrency<=4;
-  const renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,compact?1:1.25));
+  const compact=low || touchUI.matches || navigator.deviceMemory<=4 || navigator.hardwareConcurrency<=4;
+  const renderer=new T.WebGLRenderer({antialias:!compact,powerPreference:'high-performance'});
+  let qualityRatio=compact?1:1.25;
+  let lowScale=1;
+  function pixelRatio(){
+    if(low)return lowScale*Math.min(devicePixelRatio,.8,Math.sqrt(640*360/(innerWidth*innerHeight)));
+    const budget=compact?1280*720:2560*1440;
+    return Math.min(devicePixelRatio,qualityRatio,Math.sqrt(budget/(innerWidth*innerHeight)));
+  }
+  renderer.setPixelRatio(pixelRatio());
   renderer.setSize(innerWidth,innerHeight);
-  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.enabled=!low;
   renderer.shadowMap.type=T.PCFSoftShadowMap;
   renderer.toneMapping=T.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.03;
@@ -60,9 +71,9 @@ export async function main(){
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     }`
-  }));scene.add(sky);
-  const [model,boxes,walkways]=await Promise.all([loadStreet(progress),fetch('./obstacles.json?v=cars-4').then(r=>r.json()),fetch('./walkways.json').then(r=>r.json())]);
-  progress.value=78;label.textContent="잠시 후 시작할 수 있어요";
+  }));if(!low)scene.add(sky);
+  const [model,boxes,walkways]=await Promise.all([loadStreet(label,low),fetch('./obstacles.json?v=cars-4').then(r=>r.json()),fetch('./walkways.json').then(r=>r.json())]);
+  await showStage(label,'거리 조명 준비 중…');
   scene.add(model.scene);
   const breeze={value:0};
   model.scene.traverse(o=>{
@@ -84,6 +95,7 @@ export async function main(){
     if(mat.name==='canopy'){
       mat.transparent=false;mat.alphaTest=.42;mat.side=T.DoubleSide;mat.depthWrite=true;
       mat.shadowSide=T.DoubleSide;
+      if(low)return;
       mat.onBeforeCompile=shader=>{
         shader.uniforms.breeze=breeze;
         shader.vertexShader='uniform float breeze;\n'+shader.vertexShader.replace('#include <begin_vertex>',`
@@ -117,41 +129,43 @@ export async function main(){
     scene.add(object);
     bound.setFromObject(object);if(solid)boxes.push([bound.min.x,bound.max.x,bound.min.z,bound.max.z]);
   }
-  await prop('water_manhole_cover',0,3,.035,0,.001,false);
+  if(!low)await prop('water_manhole_cover',0,3,.035,0,.001,false);
   // A local reflection probe includes the opposite frontage and real canopy silhouettes.
   // All six sides see the same fixed sun and static city.
   renderer.shadowMap.autoUpdate=false;
   renderer.shadowMap.needsUpdate=true;
-  const target=new T.WebGLCubeRenderTarget(compact?128:512,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
-  const probe=new T.CubeCamera(.3,190,target);probe.position.set(0,3.5,-9.7);probe.update(renderer,scene);
-  const pmrem=new T.PMREMGenerator(renderer), environment=pmrem.fromCubemap(target.texture);
-  scene.environment=environment.texture;
-  // Project static street reflections onto the opposite frontage. One capture serves every frame.
-  model.scene.traverse(o=>{
-    if(!o.isMesh||!['glass','smoke','tint'].includes(o.material.name))return;
-    const mat=o.material;
-    mat.envMap=environment.texture;mat.metalness=.57;mat.roughness=.13;
-    mat.onBeforeCompile=shader=>{
-      shader.uniforms.streetReflection={value:target.texture};
-      shader.uniforms.probeCenter={value:probe.position};
-      shader.vertexShader='varying vec3 panePosition;\n'+shader.vertexShader.replace('#include <worldpos_vertex>',
-        '#include <worldpos_vertex>\n panePosition=(modelMatrix*vec4(transformed,1.)).xyz;');
-      shader.fragmentShader='varying vec3 panePosition; uniform samplerCube streetReflection; uniform vec3 probeCenter;\n'+shader.fragmentShader.replace('#include <opaque_fragment>',`
-        vec3 N=normalize(inverseTransformDirection(normal,viewMatrix));
-        vec3 V=normalize(cameraPosition-panePosition);
-        vec3 R=reflect(-V,N);
-        float opposite=R.z>0.?12.:-32.;
-        float t=clamp((opposite-panePosition.z)/(abs(R.z)<.001?.001:R.z),0.,90.);
-        vec3 ray=normalize(panePosition+t*R-probeCenter);
-        vec3 reflected=textureCube(streetReflection,ray).rgb;
-        float fresnel=pow(1.-clamp(abs(dot(N,V)),0.,1.),3.);
-        float frontage=1.-smoothstep(17.,26.,abs(panePosition.z));
-        float planeFacing=abs(N.z);
-        outgoingLight=mix(outgoingLight,reflected*vec3(.86,1.04,1.00),frontage*planeFacing*(.30+.32*fresnel));
-        #include <opaque_fragment>`);
-    };
-  });
-  pmrem.dispose();
+  if(!low){
+    const target=new T.WebGLCubeRenderTarget(compact?128:512,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+    const probe=new T.CubeCamera(.3,190,target);probe.position.set(0,3.5,-9.7);probe.update(renderer,scene);
+    const pmrem=new T.PMREMGenerator(renderer), environment=pmrem.fromCubemap(target.texture);
+    scene.environment=environment.texture;
+    // Project static street reflections onto the opposite frontage. One capture serves every frame.
+    model.scene.traverse(o=>{
+      if(!o.isMesh||!['glass','smoke','tint'].includes(o.material.name))return;
+      const mat=o.material;
+      mat.envMap=environment.texture;mat.metalness=.57;mat.roughness=.13;
+      mat.onBeforeCompile=shader=>{
+        shader.uniforms.streetReflection={value:target.texture};
+        shader.uniforms.probeCenter={value:probe.position};
+        shader.vertexShader='varying vec3 panePosition;\n'+shader.vertexShader.replace('#include <worldpos_vertex>',
+          '#include <worldpos_vertex>\n panePosition=(modelMatrix*vec4(transformed,1.)).xyz;');
+        shader.fragmentShader='varying vec3 panePosition; uniform samplerCube streetReflection; uniform vec3 probeCenter;\n'+shader.fragmentShader.replace('#include <opaque_fragment>',`
+          vec3 N=normalize(inverseTransformDirection(normal,viewMatrix));
+          vec3 V=normalize(cameraPosition-panePosition);
+          vec3 R=reflect(-V,N);
+          float opposite=R.z>0.?12.:-32.;
+          float t=clamp((opposite-panePosition.z)/(abs(R.z)<.001?.001:R.z),0.,90.);
+          vec3 ray=normalize(panePosition+t*R-probeCenter);
+          vec3 reflected=textureCube(streetReflection,ray).rgb;
+          float fresnel=pow(1.-clamp(abs(dot(N,V)),0.,1.),3.);
+          float frontage=1.-smoothstep(17.,26.,abs(panePosition.z));
+          float planeFacing=abs(N.z);
+          outgoingLight=mix(outgoingLight,reflected*vec3(.86,1.04,1.00),frontage*planeFacing*(.30+.32*fresnel));
+          #include <opaque_fragment>`);
+      };
+    });
+    pmrem.dispose();
+  }
   cullStreetSectors(model.scene);
   const canvas=renderer.domElement;
   let walked=false, turned=false, destination='', lockHint=false;
@@ -187,7 +201,7 @@ export async function main(){
     e.preventDefault();
     if(menu.open)menu.close();else openMenu();
   });
-  progress.value=92;
+  await showStage(label,'캐릭터 준비 중…');
   const walker=await createWalker(scene,camera,boxes,canvas,walkways,model.scene);
   const body=document.body,arrival=document.querySelector('#arrival'),enter=document.querySelector('#enter');
   const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
@@ -230,7 +244,7 @@ export async function main(){
       }
     };
   }
-  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+  addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setPixelRatio(pixelRatio());renderer.setSize(innerWidth,innerHeight);});
   renderer.shadowMap.autoUpdate=false;
   renderer.shadowMap.needsUpdate=true;
   const directDraw=scene=>renderer.render(scene,camera);
@@ -242,7 +256,8 @@ export async function main(){
     const view=body.dataset.view;
     if(view!=='walking'||walker.isActive(now))lastActivity=now;
     const resting=menu.open||view==='aerial'||(compact&&now-lastActivity>1000);
-    if(resting&&now-lastIdleFrame<(menu.open?200:50))return;
+    const interval=resting?(menu.open?200:50):(low?1000/30:0);
+    if(now-lastIdleFrame<interval-1)return;
     lastIdleFrame=now;
     const dt=clock.getDelta();
     breeze.value+=Math.min(dt,.12);
@@ -259,20 +274,30 @@ export async function main(){
     }
     draw(scene);
     if(view==='loading'){
-      progress.value=100;
       body.dataset.view='aerial';
       document.querySelector('#loading').hidden=true;enter.hidden=false;
     }
     if(resting){sampleSeconds=0;sampleFrames=0;return;}
     sampleSeconds+=Math.min(dt,1);sampleFrames++;
     if(sampleSeconds>=1.5){
-      if(sampleFrames/sampleSeconds<32){
+      const fps=sampleFrames/sampleSeconds;
+      if(low){
+        // Keep the reduced resolution for this visit to avoid visible oscillation.
+        if(fps<23&&lowScale===1){
+          lowScale=.75;
+          renderer.setPixelRatio(pixelRatio());
+        }
+        sampleSeconds=0;sampleFrames=0;
+        return;
+      }
+      if(fps<32){
         draw.dispose?.();
         draw=directDraw;
       }
       const minimum=sampleFrames/sampleSeconds<26?.65:.8;
       if(sampleFrames/sampleSeconds<40&&renderer.getPixelRatio()>minimum){
-        renderer.setPixelRatio(Math.max(minimum,renderer.getPixelRatio()-.2));
+        qualityRatio=Math.max(minimum,renderer.getPixelRatio()-.2);
+        renderer.setPixelRatio(pixelRatio());
       }
       sampleSeconds=0;sampleFrames=0;
     }
