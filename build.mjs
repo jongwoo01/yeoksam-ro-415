@@ -5,7 +5,7 @@ const output='dist';
 await mkdir(output,{recursive:true});
 const files=['index.html','street.js','walker.js','touch-controls.js','street-boundary.js','street-route.js','contact-light.js','aerial.webp',
   'knit-motion.json','knit-man.glb','knit-woman.glb','walkways.json','obstacles.json','camera-volume.bin',
-  'lib','utils','props/water_manhole_cover'];
+  'lib','utils','archive','props/water_manhole_cover'];
 for(const file of files)await cp('public/'+file,output+'/'+file,{recursive:true});
 const model=await readFile('public/street.glb');
 await writeFile(output+'/street.glb.gz',gzipSync(model,{level:9}));

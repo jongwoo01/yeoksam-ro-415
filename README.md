@@ -15,3 +15,5 @@ WASD 또는 방향키로 이동하고 마우스로 둘러봅니다. Shift로 달
 ## 제작 자료
 
 Three.js와 관련 로더의 라이선스는 MIT입니다. 거리 재질과 맨홀 모델에 Poly Haven의 CC0 자료를 사용했습니다. Blender 제작 스크립트는 source에, 웹에서 사용하는 완성 모델과 애니메이션은 public에 있습니다.
+
+[제작 기록 보기](https://hanq-walk.leejongwoo.com/archive/)에서 거리의 초기 시안과 장소별 웹 검수 화면을 비교할 수 있습니다.

@@ -26,3 +26,8 @@
 !source/
 !source/*.py
 !public/camera-volume.bin
+!public/archive/
+!public/archive/index.html
+!public/archive/images/
+!public/archive/images/*.webp
+!public/archive/images/*.mp4
