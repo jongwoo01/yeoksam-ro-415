@@ -54,11 +54,13 @@ export function createContactPass(renderer,camera){
   const screen=new T.Scene(), quad=new T.Mesh(new T.PlaneGeometry(2,2),material);
   screen.add(quad);
   const screenCamera=new T.Camera(),size=new T.Vector2();
-  return scene=>{
+  const draw=scene=>{
     renderer.getDrawingBufferSize(size);
     if(target.width!==size.x||target.height!==size.y)target.setSize(size.x,size.y);
     uniforms.dimensions.value.copy(size);uniforms.focalScale.value=.5*size.y*camera.projectionMatrix.elements[5];
     renderer.setRenderTarget(target);renderer.render(scene,camera);
     renderer.setRenderTarget(null);renderer.render(screen,screenCamera);
   };
+  draw.dispose=()=>{target.dispose();quad.geometry.dispose();material.dispose();};
+  return draw;
 }

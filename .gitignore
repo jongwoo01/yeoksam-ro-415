@@ -31,3 +31,4 @@
 !public/archive/images/
 !public/archive/images/*.webp
 !public/archive/images/*.mp4
+!source/street-sectors.mjs

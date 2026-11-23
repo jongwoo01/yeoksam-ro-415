@@ -28,30 +28,45 @@ export async function createWalker(scene,camera,boxes,canvas,walkways,city){
   const clips=motion.map(({name,duration,times,tracks})=>new T.AnimationClip(name,duration,
     Object.entries(tracks).map(([path,values])=>path.endsWith('.quaternion')
       ?new T.QuaternionKeyframeTrack(path,times,values):new T.VectorKeyframeTrack(path,times,values))));
-  const variants=await Promise.all(['man','woman'].map(async id=>{
+  const selector=document.querySelector('#avatar'), avatarMessage=document.querySelector('#avatarMessage');
+  const variants=new Map();
+  try{if(localStorage.getItem('hanq-avatar')==='woman')selector.value='woman';}catch{}
+  let active,playing;
+  async function loadAvatar(id){
     const {scene:model}=await loader.loadAsync('./knit-'+id+'.glb?v=4');
     model.visible=false;player.add(model);
     model.traverse(obj=>{if(obj.isMesh)obj.receiveShadow=true;});
     const mixer=new T.AnimationMixer(model);
     const actions=Object.fromEntries(clips.map(clip=>[clip.name,mixer.clipAction(clip)]));
     return {id,model,mixer,actions};
-  }));
-  const selector=document.querySelector('#avatar');
-  try{if(localStorage.getItem('hanq-avatar')==='woman')selector.value='woman';}catch{}
-  let active,playing;
-  function selectAvatar(){
-    const selected=variants.find(choice=>choice.id===selector.value);
-    for(const choice of variants)choice.model.visible=choice===selected;
+  }
+  async function selectAvatar(){
+    const id=selector.value;
+    if(!variants.has(id)){
+      variants.set(id,loadAvatar(id).catch(error=>{variants.delete(id);throw error;}));
+    }
+    avatarMessage.textContent=active&&active.id!==id?'캐릭터 불러오는 중…':'';
+    let selected;
+    try{selected=await variants.get(id);}
+    catch(error){
+      if(!active)throw error;
+      if(selector.value===id){
+        selector.value=active.id;
+        avatarMessage.textContent='캐릭터를 불러오지 못했어요. 다시 선택해 주세요.';
+      }
+      return;
+    }
+    if(selector.value!==id)return;
+    avatarMessage.textContent='';
     if(active===selected)return;
     const time=playing?active.actions[playing].time:0;
-    active=selected;active.mixer.stopAllAction();
+    if(active)active.model.visible=false;
+    active=selected;active.model.visible=true;active.mixer.stopAllAction();
     if(playing){const action=active.actions[playing];action.reset().play();action.time=time;active.mixer.update(0);}
+    try{localStorage.setItem('hanq-avatar',id);}catch{}
   }
-  selectAvatar();
-  selector.addEventListener('change',()=>{
-    selectAvatar();
-    try{localStorage.setItem('hanq-avatar',selector.value);}catch{}
-  });
+  await selectAvatar();
+  selector.addEventListener('change',selectAvatar);
   function animate(dt,moving,sprint,grounded,forward){
     const name=!grounded?'Jump_Loop':!moving?'Idle_Loop':sprint?'Sprint_Loop':'Jog_Fwd_Loop';
     const action=active.actions[name];
@@ -108,8 +123,9 @@ export async function createWalker(scene,camera,boxes,canvas,walkways,city){
     nearby=boxes.filter(([l,r,b,t])=>target.x+distance+.12>=l&&target.x-distance-.12<=r&&target.z+distance+.12>=b&&target.z-distance-.12<=t);
     let available=distance;
     for(let d=.12;d<=distance;d+=.10){
-      const z=target.z+offset.z*d;
-      if(cameraBlocked(target.x+offset.x*d,target.y+offset.y*d,z)||nearby.some(box=>target.y+offset.y*d-.12<(box[4]??Infinity)&&overlaps(target.x+offset.x*d,z,.12,box))||target.y+offset.y*d<floorAt(target.x+offset.x*d,z)+.18){
+      const x=target.x+offset.x*d,y=target.y+offset.y*d,z=target.z+offset.z*d;
+      // Pavement is at most .146 m high. Only sample its footprint near ground level.
+      if(cameraBlocked(x,y,z)||nearby.some(box=>y-.12<(box[4]??Infinity)&&overlaps(x,z,.12,box))||(y<.146+.18&&y<floorAt(x,z)+.18)){
         available=Math.max(.09,d-.12);break;
       }
     }
@@ -148,9 +164,11 @@ export async function createWalker(scene,camera,boxes,canvas,walkways,city){
   const parking=()=>travel(10.1,-28.7,1.72);
   if(location.hash==='#corner')place(11.46,-2.8,-.12);
   else place(entrance.x,entrance.z,entrance.angle);
+  let zoomActiveUntil=0;
   canvas.addEventListener('wheel',e=>{
     if(document.body.dataset.view!=='walking')return;
     e.preventDefault();
+    zoomActiveUntil=performance.now()+650;
     const pixels=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?canvas.clientHeight:1);
     distance=T.MathUtils.clamp(distance*Math.exp(T.MathUtils.clamp(pixels*.0012,-.35,.35)),3,10);
   },{passive:false});
@@ -257,8 +275,8 @@ export async function createWalker(scene,camera,boxes,canvas,walkways,city){
       // The router checked this segment as a line, including corner clearance.
       pos.x+=dx;pos.z+=dz;
     }else{
-      if(free(pos.x+dx,pos.z))pos.x+=dx;
-      if(free(pos.x,pos.z+dz))pos.z+=dz;
+      if(dx&&free(pos.x+dx,pos.z))pos.x+=dx;
+      if(dz&&free(pos.x,pos.z+dz))pos.z+=dz;
     }
     const moving=Math.hypot(pos.x-prevX,pos.z-prevZ)>.0001;
     if(moving&&!trip&&!hasWalked){hasWalked=true;canvas.dispatchEvent(new Event("firstwalk"));}
@@ -271,7 +289,11 @@ export async function createWalker(scene,camera,boxes,canvas,walkways,city){
     if(grounded){pos.y=floor;vertical=0;}
     animate(dt,moving,sprint||routeSpeed>6,grounded,f);
   }
-  return {position:pos,reset,detail,parking,update(elapsed){
+  function isActive(now){
+    return !!(trip||!grounded||keys.size||touch.forward||touch.right||now<zoomActiveUntil||
+      Math.abs(yaw-desiredYaw)>.0001||Math.abs(elevation-desiredElevation)>.0001);
+  }
+  return {position:pos,reset,detail,parking,isActive,update(elapsed){
     let remaining=Math.min(elapsed,.15);
     while(remaining>.00001){const dt=Math.min(remaining,1/60);step(dt);remaining-=dt;}
     const floor=supportAt(pos.x,pos.z,pos.y),height=Math.max(0,pos.y-floor);

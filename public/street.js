@@ -1,3 +1,4 @@
+import {cullStreetSectors} from './street-sectors.js';
 import {createBoundary} from './street-boundary.js';
 import * as T from 'three';
 import {GLTFLoader} from './lib/GLTFLoader.js';
@@ -20,8 +21,10 @@ async function loadStreet(progress){
 export async function main(){
   const progress=document.querySelector("progress");
   const label=document.querySelector("#loadLabel");
+  const touchUI=matchMedia('(any-pointer:coarse)');
+  const compact=touchUI.matches || navigator.deviceMemory<=4 || navigator.hardwareConcurrency<=4;
   const renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));
+  renderer.setPixelRatio(Math.min(devicePixelRatio,compact?1:1.25));
   renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=T.PCFSoftShadowMap;
@@ -34,7 +37,7 @@ export async function main(){
   const light=new T.DirectionalLight(0xfff0d9,2.15);
   light.position.set(-24,42,24);light.castShadow=true;
   Object.assign(light.shadow.camera,{left:-47,right:47,top:38,bottom:-40,near:.1,far:125});
-  light.shadow.mapSize.set(2048,2048);light.shadow.normalBias=.018;
+  light.shadow.mapSize.setScalar(compact?1024:2048);light.shadow.normalBias=.018;
   scene.add(light,new T.HemisphereLight(0xe1ecf4,0xa89a83,1.66));
   const sky=new T.Mesh(new T.SphereGeometry(190,32,16), new T.ShaderMaterial({
     side:T.BackSide,depthWrite:false,
@@ -99,7 +102,11 @@ export async function main(){
     if(mat.name.startsWith('leaf'))mat.side=T.DoubleSide;
   });
   scene.background=new T.Color(0xc6dbea);
-  const gltf=new GLTFLoader();
+  const propManager=new T.LoadingManager();
+  if(compact){
+    propManager.setURLModifier(url=>url.replace(/(water_manhole_cover_[^/]+)_1k\.jpg$/, '$1_384.jpg'));
+  }
+  const gltf=new GLTFLoader(propManager);
   async function prop(name,x,z,height,rotation,baseY,solid=true){
     const {scene:object}=await gltf.loadAsync('./props/'+name+'/'+name+'.gltf');
     const bound=new T.Box3().setFromObject(object),size=bound.getSize(new T.Vector3());
@@ -115,7 +122,7 @@ export async function main(){
   // All six sides see the same fixed sun and static city.
   renderer.shadowMap.autoUpdate=false;
   renderer.shadowMap.needsUpdate=true;
-  const target=new T.WebGLCubeRenderTarget(512,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
+  const target=new T.WebGLCubeRenderTarget(compact?128:512,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
   const probe=new T.CubeCamera(.3,190,target);probe.position.set(0,3.5,-9.7);probe.update(renderer,scene);
   const pmrem=new T.PMREMGenerator(renderer), environment=pmrem.fromCubemap(target.texture);
   scene.environment=environment.texture;
@@ -145,6 +152,7 @@ export async function main(){
     };
   });
   pmrem.dispose();
+  cullStreetSectors(model.scene);
   const canvas=renderer.domElement;
   let walked=false, turned=false, destination='', lockHint=false;
   const menu=document.querySelector('#menu');
@@ -158,11 +166,10 @@ export async function main(){
   settings.onclick=openMenu;
   document.querySelector('#closeMenu').onclick=()=>menu.close();
   menu.addEventListener('close',()=>{if(document.body.dataset.view==='walking')canvas.focus();});
-  const touchUI=matchMedia('(any-pointer:coarse)');
   function updateStatus(){
     status.textContent=destination?destination+(touchUI.matches?' 이동 중 · 조이스틱으로 직접 걷기':' 이동 중 · WASD로 직접 걷기'):
       lockHint?'Esc로 설정을 열 수 있어요':
-      walked&&turned?'':touchUI.matches?'바닥을 탭해 이동 · 화면을 밀어 둘러보기':'마우스로 둘러보고 WASD로 걸어보세요';
+      (touchUI.matches||walked&&turned)?'':'마우스로 둘러보고 WASD로 걸어보세요';
   }
   canvas.addEventListener('firstwalk',()=>{walked=true;updateStatus();});
   canvas.addEventListener('firstlook',()=>{turned=true;updateStatus();});
@@ -226,17 +233,19 @@ export async function main(){
   addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
   renderer.shadowMap.autoUpdate=false;
   renderer.shadowMap.needsUpdate=true;
-  let draw=createContactPass(renderer,camera);
+  const directDraw=scene=>renderer.render(scene,camera);
+  let draw=compact?directDraw:createContactPass(renderer,camera);
   let sampleSeconds=0, sampleFrames=0;
-  let lastIdleFrame=-Infinity;
+  let lastIdleFrame=-Infinity,lastActivity=-Infinity;
   renderer.setAnimationLoop(now=>{
     if(document.hidden)return;
-    const resting=menu.open||body.dataset.view==='aerial';
+    const view=body.dataset.view;
+    if(view!=='walking'||walker.isActive(now))lastActivity=now;
+    const resting=menu.open||view==='aerial'||(compact&&now-lastActivity>1000);
     if(resting&&now-lastIdleFrame<(menu.open?200:50))return;
     lastIdleFrame=now;
     const dt=clock.getDelta();
     breeze.value+=Math.min(dt,.12);
-    const view=body.dataset.view;
     if(view==='walking'&&!menu.open){walker.update(dt);boundary(breeze.value);}
     else if(view==='loading'||view==='aerial'){
       camera.position.copy(aerial);camera.lookAt(aerialTarget);
@@ -254,13 +263,14 @@ export async function main(){
       body.dataset.view='aerial';
       document.querySelector('#loading').hidden=true;enter.hidden=false;
     }
-    if(resting||dt>.25){sampleSeconds=0;sampleFrames=0;return;}
-    sampleSeconds+=dt;sampleFrames++;
+    if(resting){sampleSeconds=0;sampleFrames=0;return;}
+    sampleSeconds+=Math.min(dt,1);sampleFrames++;
     if(sampleSeconds>=1.5){
       if(sampleFrames/sampleSeconds<32){
-        draw=scene=>renderer.render(scene,camera);
+        draw.dispose?.();
+        draw=directDraw;
       }
-      const minimum=touchUI.matches&&sampleFrames/sampleSeconds<26?.7:.8;
+      const minimum=sampleFrames/sampleSeconds<26?.65:.8;
       if(sampleFrames/sampleSeconds<40&&renderer.getPixelRatio()>minimum){
         renderer.setPixelRatio(Math.max(minimum,renderer.getPixelRatio()-.2));
       }
