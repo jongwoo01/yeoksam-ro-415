@@ -11,6 +11,7 @@
 !public/knit-motion.json
 !public/street.glb
 !public/street-low.glb
+!public/street-light.bin.gz
 !public/obstacles.json
 !public/walkways.json
 !public/aerial.webp
@@ -41,3 +42,6 @@
 
 !public/archive/chat/
 !public/archive/chat/index.html
+
+!public/making/
+!public/making/index.html

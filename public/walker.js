@@ -113,20 +113,28 @@ export async function createWalker(scene,camera,boxes,canvas,walkways,city){
     return !!(volume[bit>>3]&(1<<(bit&7)));
   }
   // Only nearby footprints can shorten the camera arm. Filter once per frame.
-  let nearby=[];
+  const lastArmStart=new T.Vector3(),lastArmDirection=new T.Vector3();
+  let lastArmLength=-1,available=0;
   const free=(x,z)=>distanceFromCenter(x,z)<=radius&&!isObstacle(x,z,.25,pos.y);
   function follow(dt,snap=false){
     const desiredY=pos.y+1.28;
     pivotY=snap?desiredY:T.MathUtils.damp(pivotY,desiredY,14,dt);
     target.set(pos.x,pivotY,pos.z);
     offset.set(Math.sin(yaw)*Math.cos(elevation),Math.sin(elevation),Math.cos(yaw)*Math.cos(elevation));
-    nearby=boxes.filter(([l,r,b,t])=>target.x+distance+.12>=l&&target.x-distance-.12<=r&&target.z+distance+.12>=b&&target.z-distance-.12<=t);
-    let available=distance;
-    for(let d=.12;d<=distance;d+=.10){
-      const x=target.x+offset.x*d,y=target.y+offset.y*d,z=target.z+offset.z*d;
-      // Pavement is at most .146 m high. Only sample its footprint near ground level.
-      if(cameraBlocked(x,y,z)||nearby.some(box=>y-.12<(box[4]??Infinity)&&overlaps(x,z,.12,box))||(y<.146+.18&&y<floorAt(x,z)+.18)){
-        available=Math.max(.09,d-.12);break;
+    // The obstruction volume and boxes are static. While the character idles
+    // the same ray has the same hit distance; keep easing the camera each frame.
+    if(lastArmLength!==distance||!target.equals(lastArmStart)||!offset.equals(lastArmDirection)){
+      lastArmLength=distance;
+      lastArmStart.copy(target);
+      lastArmDirection.copy(offset);
+      const nearby=boxes.filter(([l,r,b,t])=>target.x+distance+.12>=l&&target.x-distance-.12<=r&&target.z+distance+.12>=b&&target.z-distance-.12<=t);
+      available=distance;
+      for(let d=.12;d<=distance;d+=.10){
+        const x=target.x+offset.x*d,y=target.y+offset.y*d,z=target.z+offset.z*d;
+        // Pavement is at most .146 m high. Only sample its footprint near ground level.
+        if(cameraBlocked(x,y,z)||nearby.some(box=>y-.12<(box[4]??Infinity)&&overlaps(x,z,.12,box))||(y<.146+.18&&y<floorAt(x,z)+.18)){
+          available=Math.max(.09,d-.12);break;
+        }
       }
     }
     // Never ease through a wall. Ease user zoom and recovery in both directions.

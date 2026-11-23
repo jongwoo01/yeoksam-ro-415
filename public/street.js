@@ -4,23 +4,46 @@ import * as T from 'three';
 import {GLTFLoader} from './lib/GLTFLoader.js';
 
 import {createContactPass} from './contact-light.js';
-import {createWalker} from './walker.js?v=walk4';
+import {createWalker} from './walker.js?v=walk5';
 
 const status=document.querySelector('#status');
+function yieldToPaint(){
+  return new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+}
 async function showStage(label,text){
   label.textContent=text;
-  // Yield a paint before the next synchronous preparation step.
-  await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+  await yieldToPaint();
 }
-async function loadStreet(label,low){
-  const file=low?'./street-low.glb':'./street.glb?v=cars-6';
-  const bytes=await new T.FileLoader().setResponseType('arraybuffer').loadAsync(file);
-  await showStage(label,'거리 모델 펼치는 중…');
+async function unpack(bytes){
   const header=new Uint8Array(bytes,0,2);
-  const data=header[0]===31&&header[1]===139
-    ?await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()
-    :bytes;
-  return new GLTFLoader().parseAsync(data,'./');
+  if(header[0]!==31||header[1]!==139)return bytes;
+  return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+}
+async function loadStreet(label){
+  const bytes=await new T.FileLoader().setResponseType('arraybuffer').loadAsync('./street.glb?v=cars-6');
+  await showStage(label,'거리 모델 펼치는 중…');
+  return new GLTFLoader().parseAsync(await unpack(bytes),'./');
+}
+// Six 128px linear RGBA16F cube faces followed by Three's 384 x 512
+// prefiltered reflection atlas, captured from the unchanged street scene.
+async function loadStreetLight(){
+  const res=await fetch('./street-light.bin.gz');
+  if(!res.ok)throw Error('Street lighting unavailable');
+  const data=new Uint16Array(await unpack(await res.arrayBuffer()));
+  const faceLength=128*128*4,atlasStart=6*faceLength;
+  if(data.length!==atlasStart+384*512*4)throw Error('Unexpected lighting texture size');
+  const faces=Array.from({length:6},(_,i)=>new T.DataTexture(
+    data.subarray(i*faceLength,(i+1)*faceLength),128,128,T.RGBAFormat,T.HalfFloatType));
+  const cube=new T.CubeTexture(faces);
+  cube.type=T.HalfFloatType;
+  cube.generateMipmaps=true;
+  cube.minFilter=T.LinearMipmapLinearFilter;
+  cube.needsUpdate=true;
+  const environment=new T.DataTexture(data.subarray(atlasStart),384,512,T.RGBAFormat,T.HalfFloatType);
+  environment.mapping=T.CubeUVReflectionMapping;
+  environment.magFilter=environment.minFilter=T.LinearFilter;
+  environment.needsUpdate=true;
+  return {cube,environment};
 }
 export async function main(quality){
   const low=quality==='low';
@@ -29,15 +52,15 @@ export async function main(quality){
   const compact=low || touchUI.matches || navigator.deviceMemory<=4 || navigator.hardwareConcurrency<=4;
   const renderer=new T.WebGLRenderer({antialias:!compact,powerPreference:'high-performance'});
   let qualityRatio=compact?1:1.25;
-  let lowScale=1;
+  const lowBudget=1920*1080;
   function pixelRatio(){
-    if(low)return lowScale*Math.min(devicePixelRatio,.8,Math.sqrt(640*360/(innerWidth*innerHeight)));
+    if(low)return Math.min(devicePixelRatio,qualityRatio,Math.sqrt(lowBudget/(innerWidth*innerHeight)));
     const budget=compact?1280*720:2560*1440;
     return Math.min(devicePixelRatio,qualityRatio,Math.sqrt(budget/(innerWidth*innerHeight)));
   }
   renderer.setPixelRatio(pixelRatio());
   renderer.setSize(innerWidth,innerHeight);
-  renderer.shadowMap.enabled=!low;
+  renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=T.PCFSoftShadowMap;
   renderer.toneMapping=T.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.03;
@@ -71,8 +94,8 @@ export async function main(quality){
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
     }`
-  }));if(!low)scene.add(sky);
-  const [model,boxes,walkways]=await Promise.all([loadStreet(label,low),fetch('./obstacles.json?v=cars-4').then(r=>r.json()),fetch('./walkways.json').then(r=>r.json())]);
+  }));sky.renderOrder=1;scene.add(sky);
+  const [model,boxes,walkways,baked]=await Promise.all([loadStreet(label),fetch('./obstacles.json?v=cars-4').then(r=>r.json()),fetch('./walkways.json').then(r=>r.json()),compact?loadStreetLight().catch(()=>null):null]);
   await showStage(label,'거리 조명 준비 중…');
   scene.add(model.scene);
   const breeze={value:0};
@@ -95,7 +118,6 @@ export async function main(quality){
     if(mat.name==='canopy'){
       mat.transparent=false;mat.alphaTest=.42;mat.side=T.DoubleSide;mat.depthWrite=true;
       mat.shadowSide=T.DoubleSide;
-      if(low)return;
       mat.onBeforeCompile=shader=>{
         shader.uniforms.breeze=breeze;
         shader.vertexShader='uniform float breeze;\n'+shader.vertexShader.replace('#include <begin_vertex>',`
@@ -129,43 +151,84 @@ export async function main(quality){
     scene.add(object);
     bound.setFromObject(object);if(solid)boxes.push([bound.min.x,bound.max.x,bound.min.z,bound.max.z]);
   }
-  if(!low)await prop('water_manhole_cover',0,3,.035,0,.001,false);
+  await prop('water_manhole_cover',0,3,.035,0,.001,false);
   // A local reflection probe includes the opposite frontage and real canopy silhouettes.
   // All six sides see the same fixed sun and static city.
   renderer.shadowMap.autoUpdate=false;
   renderer.shadowMap.needsUpdate=true;
-  if(!low){
+  // Let the loading UI paint between groups of static texture uploads.
+  const textures=new Set();
+  model.scene.traverse(object=>{
+    if(object.isMesh)for(const value of Object.values(object.material)){
+      if(value?.isTexture&&!value.isRenderTargetTexture)textures.add(value);
+    }
+  });
+  let lastYield=performance.now();
+  for(const texture of textures){
+    renderer.initTexture(texture);
+    if(performance.now()-lastYield>8){
+      await yieldToPaint();
+      lastYield=performance.now();
+    }
+  }
+  const probeCenter=new T.Vector3(0,3.5,-9.7);
+  let lighting=baked;
+  if(!lighting){
     const target=new T.WebGLCubeRenderTarget(compact?128:512,{type:T.HalfFloatType,generateMipmaps:true,minFilter:T.LinearMipmapLinearFilter});
-    const probe=new T.CubeCamera(.3,190,target);probe.position.set(0,3.5,-9.7);probe.update(renderer,scene);
-    const pmrem=new T.PMREMGenerator(renderer), environment=pmrem.fromCubemap(target.texture);
-    scene.environment=environment.texture;
-    // Project static street reflections onto the opposite frontage. One capture serves every frame.
-    model.scene.traverse(o=>{
-      if(!o.isMesh||!['glass','smoke','tint'].includes(o.material.name))return;
-      const mat=o.material;
-      mat.envMap=environment.texture;mat.metalness=.57;mat.roughness=.13;
-      mat.onBeforeCompile=shader=>{
-        shader.uniforms.streetReflection={value:target.texture};
-        shader.uniforms.probeCenter={value:probe.position};
-        shader.vertexShader='varying vec3 panePosition;\n'+shader.vertexShader.replace('#include <worldpos_vertex>',
-          '#include <worldpos_vertex>\n panePosition=(modelMatrix*vec4(transformed,1.)).xyz;');
-        shader.fragmentShader='varying vec3 panePosition; uniform samplerCube streetReflection; uniform vec3 probeCenter;\n'+shader.fragmentShader.replace('#include <opaque_fragment>',`
-          vec3 N=normalize(inverseTransformDirection(normal,viewMatrix));
-          vec3 V=normalize(cameraPosition-panePosition);
-          vec3 R=reflect(-V,N);
-          float opposite=R.z>0.?12.:-32.;
-          float t=clamp((opposite-panePosition.z)/(abs(R.z)<.001?.001:R.z),0.,90.);
-          vec3 ray=normalize(panePosition+t*R-probeCenter);
-          vec3 reflected=textureCube(streetReflection,ray).rgb;
-          float fresnel=pow(1.-clamp(abs(dot(N,V)),0.,1.),3.);
-          float frontage=1.-smoothstep(17.,26.,abs(panePosition.z));
-          float planeFacing=abs(N.z);
-          outgoingLight=mix(outgoingLight,reflected*vec3(.86,1.04,1.00),frontage*planeFacing*(.30+.32*fresnel));
-          #include <opaque_fragment>`);
-      };
-    });
+    const probe=new T.CubeCamera(.3,190,target);
+    probe.position.copy(probeCenter);
+    // Preserve CubeCamera's face order and orientation. Submit one view per
+    // paint so a six-face capture cannot monopolize a single loading frame.
+    probe.coordinateSystem=renderer.coordinateSystem;
+    probe.updateCoordinateSystem();
+    probe.updateMatrixWorld(true);
+    const previousTarget=renderer.getRenderTarget();
+    const previousFace=renderer.getActiveCubeFace();
+    const previousMip=renderer.getActiveMipmapLevel();
+    try{
+      for(const [face,faceCamera] of probe.children.entries()){
+        target.texture.generateMipmaps=face===5;
+        renderer.setRenderTarget(target,face);
+        renderer.render(scene,faceCamera);
+        await yieldToPaint();
+      }
+    }finally{
+      renderer.setRenderTarget(previousTarget,previousFace,previousMip);
+    }
+    target.texture.needsPMREMUpdate=true;
+    const pmrem=new T.PMREMGenerator(renderer);
+    lighting={cube:target.texture,environment:pmrem.fromCubemap(target.texture).texture};
     pmrem.dispose();
   }
+  scene.environment=lighting.environment;
+  // Project static street reflections onto the opposite frontage. One capture serves every frame.
+  model.scene.traverse(o=>{
+    if(!o.isMesh||!['glass','smoke','tint'].includes(o.material.name))return;
+    const mat=o.material;
+    mat.envMap=lighting.environment;mat.metalness=.57;mat.roughness=.13;
+    mat.onBeforeCompile=shader=>{
+      shader.uniforms.streetReflection={value:lighting.cube};
+      shader.uniforms.probeCenter={value:probeCenter};
+      shader.vertexShader='varying vec3 panePosition;\n'+shader.vertexShader.replace('#include <worldpos_vertex>',
+        '#include <worldpos_vertex>\n panePosition=(modelMatrix*vec4(transformed,1.)).xyz;');
+      shader.fragmentShader='varying vec3 panePosition; uniform samplerCube streetReflection; uniform vec3 probeCenter;\n'+shader.fragmentShader.replace('#include <opaque_fragment>',`
+        vec3 N=normalize(inverseTransformDirection(normal,viewMatrix));
+        vec3 V=normalize(cameraPosition-panePosition);
+        vec3 R=reflect(-V,N);
+        float opposite=R.z>0.?12.:-32.;
+        float t=clamp((opposite-panePosition.z)/(abs(R.z)<.001?.001:R.z),0.,90.);
+        vec3 ray=normalize(panePosition+t*R-probeCenter);
+        vec3 reflected=textureCube(streetReflection,ray).rgb;
+        float fresnel=pow(1.-clamp(abs(dot(N,V)),0.,1.),3.);
+        float frontage=1.-smoothstep(17.,26.,abs(panePosition.z));
+        float planeFacing=abs(N.z);
+        outgoingLight=mix(outgoingLight,reflected*vec3(.86,1.04,1.00),frontage*planeFacing*(.30+.32*fresnel));
+        #include <opaque_fragment>`);
+    };
+  });
+  // Building transforms are fixed; camera, avatar and animated uniforms stay live.
+  model.scene.updateMatrixWorld(true);
+  model.scene.traverse(object=>{object.matrixAutoUpdate=false;object.matrixWorldAutoUpdate=false;});
   cullStreetSectors(model.scene);
   const canvas=renderer.domElement;
   let walked=false, turned=false, destination='', lockHint=false;
@@ -221,13 +284,14 @@ export async function main(quality){
     canvas.tabIndex=-1;canvas.focus({preventScroll:true});updateStatus();
     if(arrivalAction){const action=arrivalAction;arrivalAction=null;startTrip(action);}
   }
-  enter.onclick=()=>{
+  function descend(){
     if(body.dataset.view!=='aerial')return;
     arrival.hidden=true;
     flightStart=performance.now();
     body.dataset.view='descending';
     if(reducedMotion.matches)finishFlight();
-  };
+  }
+  enter.addEventListener('click',descend);
   function startTrip(action){
     if(walker[action]()){
       destination=document.getElementById(action).textContent;updateStatus();
@@ -245,8 +309,7 @@ export async function main(quality){
     };
   }
   addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setPixelRatio(pixelRatio());renderer.setSize(innerWidth,innerHeight);});
-  renderer.shadowMap.autoUpdate=false;
-  renderer.shadowMap.needsUpdate=true;
+  if(renderer.extensions.has("KHR_parallel_shader_compile"))await renderer.compileAsync(scene,camera);
   const directDraw=scene=>renderer.render(scene,camera);
   let draw=compact?directDraw:createContactPass(renderer,camera);
   let sampleSeconds=0, sampleFrames=0;
@@ -256,7 +319,7 @@ export async function main(quality){
     const view=body.dataset.view;
     if(view!=='walking'||walker.isActive(now))lastActivity=now;
     const resting=menu.open||view==='aerial'||(compact&&now-lastActivity>1000);
-    const interval=resting?(menu.open?200:50):(low?1000/30:0);
+    const interval=resting?(menu.open?500:(low?125:50)):(low?1000/30:0);
     if(now-lastIdleFrame<interval-1)return;
     lastIdleFrame=now;
     const dt=clock.getDelta();
@@ -275,16 +338,17 @@ export async function main(quality){
     draw(scene);
     if(view==='loading'){
       body.dataset.view='aerial';
-      document.querySelector('#loading').hidden=true;enter.hidden=false;
+      document.querySelector('#loading').hidden=true;
+      if(enter.dataset.queued)descend();
     }
     if(resting){sampleSeconds=0;sampleFrames=0;return;}
     sampleSeconds+=Math.min(dt,1);sampleFrames++;
     if(sampleSeconds>=1.5){
       const fps=sampleFrames/sampleSeconds;
       if(low){
-        // Keep the reduced resolution for this visit to avoid visible oscillation.
-        if(fps<23&&lowScale===1){
-          lowScale=.75;
+        // Keep near-native detail under sustained load (at least 900p at 1080p).
+        if(fps<23&&qualityRatio>5/6){
+          qualityRatio=5/6;
           renderer.setPixelRatio(pixelRatio());
         }
         sampleSeconds=0;sampleFrames=0;

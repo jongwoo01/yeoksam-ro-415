@@ -5,12 +5,10 @@ import {indexStreetSectors} from './source/street-sectors.mjs';
 const output='dist';
 await mkdir(output,{recursive:true});
 const files=['_routes.json','share','index.html','street.js','walker.js','touch-controls.js','street-boundary.js','street-sectors.js','street-route.js','contact-light.js','aerial.webp',
-  'knit-motion.json','knit-man.glb','knit-woman.glb','walkways.json','obstacles.json','camera-volume.bin',
-  'lib','utils','archive','props/water_manhole_cover'];
+  'street-light.bin.gz','knit-motion.json','knit-man.glb','knit-woman.glb','walkways.json','obstacles.json','camera-volume.bin',
+  'lib','utils','making','archive','props/water_manhole_cover'];
 for(const file of files)await cp('public/'+file,output+'/'+file,{recursive:true});
 const model=await readFile('public/street.glb');
 await writeFile(output+'/street.glb.gz',gzipSync(indexStreetSectors(model),{level:9}));
-const lightModel=await readFile('public/street-low.glb');
-await writeFile(output+'/street-low.glb.gz',gzipSync(indexStreetSectors(lightModel),{level:9}));
 const entry=await readFile(output+'/street.js','utf8');
-await writeFile(output+'/street.js',entry.replace('./street.glb?v=cars-6', './street.glb.gz').replace('./street-low.glb', './street-low.glb.gz'));
+await writeFile(output+'/street.js',entry.replace('./street.glb?v=cars-6', './street.glb.gz'));
